@@ -19,6 +19,28 @@ export class AIService {
     return new GoogleGenAI({ apiKey });
   }
 
+  private async withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initialDelay: number = 2000): Promise<T> {
+    let lastError: any;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        // Check if it's a rate limit error (429)
+        const isRateLimit = error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED' || error?.code === 429;
+        
+        if (isRateLimit && i < maxRetries - 1) {
+          const delay = initialDelay * Math.pow(2, i);
+          console.warn(`Rate limit hit. Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
   public async generateBanner(config: BannerConfig, signal?: AbortSignal): Promise<BannerOption[]> {
     // For this demo, we'll implement the Gemini path as the primary real integration
     // Other models would be proxied through the server
@@ -76,7 +98,7 @@ export class AIService {
     else if (ratio <= 0.7) aspectRatio = "3:4";
     else if (ratio <= 1.2) aspectRatio = "1:1";
     else if (ratio <= 1.5) aspectRatio = "4:3";
-    else if (ratio <= 2.0) aspectRatio = "16:9";
+    else if (ratio <= 2.8) aspectRatio = "16:9";
     else if (ratio <= 6.0) aspectRatio = "4:1";
     else aspectRatio = "8:1";
 
@@ -86,103 +108,118 @@ export class AIService {
     for (let i = 0; i < 4; i++) {
       if (signal?.aborted) break;
       
-      let variationPrompt = `${brandPrompt}${config.prompt}. Variation ${i + 1}. Style: ${config.mode.join(', ')}. High resolution, professional design, seamless vertical continuity.`;
+      const foldImages: string[] = [];
       
-      if (config.hybridBlend) {
-        variationPrompt += " HYBRID BLEND MODE: Combine the hyper-realistic textures of Flux with the artistic composition of DALL-E 3 and the lighting precision of Midjourney. Create a synthesized output that blends these model strengths.";
-      }
+      // Generate each fold individually for true separation and "one visual per fold"
+      for (let f = 0; f < config.folds; f++) {
+        if (signal?.aborted) break;
 
-      const parts: any[] = [{ text: variationPrompt }];
-      
-      // Add Brand Logo if available
-      if (activeBrand?.logo) {
-        if (activeBrand.logo.startsWith('data:')) {
+        const foldContext = f === 0 
+          ? "FOLD 1 (TOP): Create a high-quality lifestyle scene featuring the product in a realistic environment."
+          : `FOLD ${f + 1}: Create a distinct visual focusing on a specific feature or technical detail of the product.`;
+
+        const livingThingsConstraint = "STRICT CONSTRAINT: Do not include any humans, animals, or living things in the image. EXCEPTION: You MAY include a human hand specifically if it is interacting with the product, such as a hand using a remote control to switch on a fan or adjust settings. No other body parts or living beings allowed.";
+
+        const continuityParams = `CONTINUITY ENGINE: Edge Alignment: ${config.continuityEngine.edgeAlignment}%, Seam Blending: ${config.continuityEngine.seamBlending}%, Depth Mapping: ${config.continuityEngine.depthMapping}%. Ensure perfect visual flow between folds using these precision parameters.`;
+
+        const styleParams = `LIGHTING: ${config.lighting}, COMPOSITION: ${config.composition}, COLOR MOOD: ${config.colorMood}.`;
+
+        let variationPrompt = `${brandPrompt}${config.prompt}. Variation ${i + 1}, Fold ${f + 1}. ${foldContext} ${livingThingsConstraint} ${continuityParams} ${styleParams} Style: ${config.mode.join(', ')}. High resolution, professional design, clean composition.`;
+        
+        if (config.hybridBlend) {
+          variationPrompt += " HYBRID BLEND MODE: Combine hyper-realistic textures with artistic composition and lighting precision.";
+        }
+
+        const parts: any[] = [{ text: variationPrompt }];
+        
+        // Add Brand Logo if available
+        if (activeBrand?.logo) {
+          if (activeBrand.logo.startsWith('data:')) {
+            parts.push({
+              inlineData: {
+                data: activeBrand.logo.split(',')[1],
+                mimeType: activeBrand.logo.split(';')[0].split(':')[1]
+              }
+            });
+            parts.push({ text: "Incorporate this brand logo naturally into the design." });
+          } else {
+            parts.push({ text: `Incorporate the brand logo from this URL naturally into the design: ${activeBrand.logo}` });
+          }
+        }
+        
+        // Add references if available
+        if (config.productRef?.image) {
           parts.push({
             inlineData: {
-              data: activeBrand.logo.split(',')[1],
-              mimeType: activeBrand.logo.split(';')[0].split(':')[1]
+              data: config.productRef.image.split(',')[1],
+              mimeType: "image/png"
             }
           });
-          parts.push({ text: "Incorporate this brand logo naturally into the design." });
-        } else {
-          // It's a URL, we'll just mention it in the prompt for now as fetching might be complex here
-          // or we could try to fetch it. For simplicity, let's just mention it.
-          parts.push({ text: `Incorporate the brand logo from this URL naturally into the design: ${activeBrand.logo}` });
-        }
-      }
-      
-      // Add references if available
-      if (config.productRef?.image) {
-        parts.push({
-          inlineData: {
-            data: config.productRef.image.split(',')[1],
-            mimeType: "image/png"
-          }
-        });
-        parts.push({ text: `Use this as product reference with ${config.productRef.strength}% strength.` });
-      }
-      
-      if (config.styleRef?.image) {
-        parts.push({
-          inlineData: {
-            data: config.styleRef.image.split(',')[1],
-            mimeType: "image/png"
-          }
-        });
-        parts.push({ text: `Use this as style reference with ${config.styleRef.strength}% strength.` });
-      }
-
-      if (config.imageRef?.image) {
-        parts.push({
-          inlineData: {
-            data: config.imageRef.image.split(',')[1],
-            mimeType: "image/png"
-          }
-        });
-        parts.push({ text: `Use this as image composition reference with ${config.imageRef.strength}% strength.` });
-      }
-
-      try {
-        const response = await ai.models.generateContent({
-          model: modelId,
-          contents: {
-            parts
-          },
-          config: {
-            imageConfig: {
-              aspectRatio,
-              imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : '1K'
-            }
-          }
-        });
-
-        let base64Data = "";
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            base64Data = part.inlineData.data;
-            break;
-          }
+          parts.push({ text: `Use this as product reference with ${config.productRef.strength}% strength. Ensure the product is the central focus.` });
         }
 
-        if (base64Data) {
-          const fullImage = `data:image/png;base64,${base64Data}`;
-          // In a real app, we'd slice the image here. 
-          // For now, we'll use the same image for all folds to demonstrate the UI
-          const folds = Array(config.folds).fill(fullImage); 
-          
-          options.push({
-            id: Math.random().toString(36).substr(2, 9),
-            fullImage,
-            folds,
-            metadata: {
-              model: config.imageModelId,
-              layout: 'Vertical Stack',
-              lighting: config.mode.includes('cinematic') ? 'Dramatic' : 'Studio'
+        if (config.styleRef?.image) {
+          parts.push({
+            inlineData: {
+              data: config.styleRef.image.split(',')[1],
+              mimeType: "image/png"
             }
           });
+          parts.push({ text: `Apply the visual style, color palette, and artistic mood from this image as a style reference with ${config.styleRef.strength}% influence.` });
         }
-      } catch (error) {
-        console.error("Error generating variation", i, error);
+
+        if (config.imageRef?.image) {
+          parts.push({
+            inlineData: {
+              data: config.imageRef.image.split(',')[1],
+              mimeType: "image/png"
+            }
+          });
+          parts.push({ text: `Use this image as a general visual reference for composition and elements with ${config.imageRef.strength}% strength.` });
+        }
+        
+        try {
+          // Add a small staggered delay to avoid overwhelming the API
+          await new Promise(resolve => setTimeout(resolve, (i * config.folds + f) * 500));
+
+          const response = await this.withRetry(() => ai.models.generateContent({
+            model: modelId,
+            contents: { parts },
+            config: {
+              imageConfig: {
+                aspectRatio: "16:9", // Standard for individual folds
+                imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : '1K'
+              }
+            }
+          }));
+
+          let base64Data = "";
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              base64Data = part.inlineData.data;
+              break;
+            }
+          }
+
+          if (base64Data) {
+            foldImages.push(`data:image/png;base64,${base64Data}`);
+          }
+        } catch (error) {
+          console.error(`Error generating variation ${i} fold ${f}`, error);
+        }
+      }
+
+      if (foldImages.length > 0) {
+        options.push({
+          id: Math.random().toString(36).substr(2, 9),
+          fullImage: foldImages[0], // Use first fold as preview
+          folds: foldImages,
+          metadata: {
+            model: config.imageModelId,
+            layout: 'Individual Folds',
+            lighting: config.mode.includes('cinematic') ? 'Dramatic' : 'Studio'
+          }
+        });
       }
     }
 
@@ -200,7 +237,10 @@ export class AIService {
     const prevFold = foldIndex > 0 ? originalOption.folds[foldIndex - 1] : null;
     const nextFold = foldIndex < originalOption.folds.length - 1 ? originalOption.folds[foldIndex + 1] : null;
 
+    const continuityParams = `CONTINUITY ENGINE: Edge Alignment: ${config.continuityEngine.edgeAlignment}%, Seam Blending: ${config.continuityEngine.seamBlending}%, Depth Mapping: ${config.continuityEngine.depthMapping}%.`;
+
     const remixPrompt = `${brandPrompt}REMIX FOLD ${foldIndex + 1}. Original Prompt: ${config.prompt}. 
+    ${continuityParams}
     Maintain perfect continuity with the provided adjacent folds. 
     Focus on enhancing the specific area of fold ${foldIndex + 1} while keeping the overall composition consistent.`;
 
@@ -264,7 +304,7 @@ export class AIService {
     else foldAspectRatio = "8:1";
 
     try {
-      const response = await ai.models.generateContent({
+      const response = await this.withRetry(() => ai.models.generateContent({
         model: modelId,
         contents: { parts },
         config: {
@@ -273,7 +313,7 @@ export class AIService {
             imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : '1K'
           }
         }
-      });
+      }));
 
       let base64Data = "";
       for (const part of response.candidates?.[0]?.content?.parts || []) {

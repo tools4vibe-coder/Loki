@@ -72,11 +72,17 @@ export interface BannerConfig {
   activeBrandId?: string;
   textLayers: TextLayer[];
   aspectRatio: '16:9' | '1:1';
-  showGuides: boolean;
-  snapToGrid: boolean;
   editingLayerId?: string;
   projectName: string;
   isAutoSaveEnabled: boolean;
+  lighting: 'studio' | 'natural' | 'dramatic' | 'high-key' | 'low-key' | 'neon';
+  composition: 'rule-of-thirds' | 'centered' | 'minimalist' | 'dynamic' | 'macro';
+  colorMood: 'warm' | 'cool' | 'neutral' | 'high-contrast' | 'vintage' | 'vibrant';
+  continuityEngine: {
+    edgeAlignment: number;
+    seamBlending: number;
+    depthMapping: number;
+  };
 }
 
 export interface BannerOption {
@@ -88,4 +94,12 @@ export interface BannerOption {
     layout: string;
     lighting: string;
   };
+}
+
+export interface GenerationHistoryItem {
+  id: string;
+  timestamp: string;
+  config: BannerConfig;
+  options: BannerOption[];
+  selectedOptionId?: string;
 }

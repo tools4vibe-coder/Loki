@@ -1,9 +1,10 @@
 import React from 'react';
-import { BannerConfig, ModelProvider, AIModel, TextLayer } from '../types';
+import { BannerConfig, ModelProvider, AIModel, TextLayer, GenerationHistoryItem } from '../types';
 import { MODELS, MODES, TEXT_MODELS, IMAGE_MODELS } from '../constants';
 import { AIService } from '../services/aiService';
 import { 
   Settings, 
+  Monitor,
   Cpu, 
   Image as ImageIcon, 
   User, 
@@ -43,7 +44,10 @@ import {
   FolderOpen,
   History,
   Sun,
-  Moon
+  Moon,
+  Focus,
+  Droplets,
+  Layout as LayoutIcon,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -55,6 +59,9 @@ interface SidebarProps {
   onLoadProject: (name: string) => void;
   onDeleteProject: (name: string) => void;
   onProjectNameChange: (name: string) => void;
+  generationHistory: GenerationHistoryItem[];
+  onLoadHistoryItem: (item: GenerationHistoryItem) => void;
+  onDeleteHistoryItem: (id: string) => void;
   onClose?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -308,7 +315,7 @@ const TextLayerEditor: React.FC<TextLayerEditorProps> = ({ layer, index, updateT
             onBlur={() => updateConfig({ editingLayerId: undefined })}
             onChange={(e) => {
               let val = parseInt(e.target.value);
-              // Simple snapping logic if needed, but we'll handle it in the parent if snapToGrid is on
+              // Simple snapping logic if needed
               updateTextLayer(layer.id, { position: { ...layer.position, x: val } });
             }}
             className="w-full accent-[var(--accent)]"
@@ -360,11 +367,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLoadProject,
   onDeleteProject,
   onProjectNameChange,
+  generationHistory,
+  onLoadHistoryItem,
+  onDeleteHistoryItem,
   onClose,
   theme,
   onToggleTheme
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'model' | 'layout' | 'assets' | 'typography' | 'layers' | 'settings'>('model');
+  const [activeTab, setActiveTab] = React.useState<'model' | 'layout' | 'assets' | 'typography' | 'layers' | 'history' | 'settings'>('model');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploadType, setUploadType] = React.useState<'product' | 'style' | 'image' | null>(null);
   const [draggingType, setDraggingType] = React.useState<'product' | 'style' | 'image' | null>(null);
@@ -393,28 +403,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const updateTextLayer = (id: string, updates: Partial<TextLayer>) => {
-    let finalUpdates = { ...updates };
-    
-    // Apply snapping if position is being updated and snapToGrid is enabled
-    if (config.snapToGrid && updates.position) {
-      const snapPoints = [0, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100];
-      const snapThreshold = 2;
-      
-      const snap = (val: number) => {
-        const closest = snapPoints.reduce((prev, curr) => 
-          Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev
-        );
-        return Math.abs(closest - val) <= snapThreshold ? closest : val;
-      };
-
-      finalUpdates.position = {
-        x: updates.position.x !== undefined ? snap(updates.position.x) : config.textLayers.find(l => l.id === id)!.position.x,
-        y: updates.position.y !== undefined ? snap(updates.position.y) : config.textLayers.find(l => l.id === id)!.position.y,
-      };
-    }
-
     updateConfig({
-      textLayers: config.textLayers.map(layer => layer.id === id ? { ...layer, ...finalUpdates } : layer)
+      textLayers: config.textLayers.map(layer => layer.id === id ? { ...layer, ...updates } : layer)
     });
   };
 
@@ -537,6 +527,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'assets', icon: Image, label: 'Assets' },
           { id: 'typography', icon: Type, label: 'Text' },
           { id: 'layers', icon: Layers, label: 'Layers' },
+          { id: 'history', icon: History, label: 'History' },
           { id: 'settings', icon: Settings, label: 'Settings' },
         ].map((tab) => (
           <button
@@ -710,10 +701,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </section>
 
-            {/* Mode */}
+            {/* Visual Mode */}
             <section className="space-y-3">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Visual Mode (Multi-Select)</label>
-              <div className="grid grid-cols-1 gap-2">
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <Grid className="w-3 h-3" /> Visual Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2">
                 {MODES.map(mode => {
                   const isActive = config.mode.includes(mode.id as any);
                   return (
@@ -723,146 +716,257 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         const newModes = isActive
                           ? config.mode.filter(m => m !== mode.id)
                           : [...config.mode, mode.id as any];
-                        // Ensure at least one mode is selected
-                        if (newModes.length > 0) {
-                          updateConfig({ mode: newModes });
-                        }
+                        if (newModes.length > 0) updateConfig({ mode: newModes });
                       }}
-                      className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${isActive ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${isActive ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
                     >
-                      <span className="text-xs font-medium">{mode.name}</span>
-                      {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]" />}
+                      <span className="text-[10px] font-medium">{mode.name}</span>
+                      {isActive && <div className="w-1 h-1 rounded-full bg-[var(--accent)]" />}
                     </button>
                   );
                 })}
+              </div>
+            </section>
+
+            {/* Precision Controls */}
+            <section className="p-4 rounded-xl bg-[var(--accent)]/5 border border-[var(--accent)]/10 space-y-4">
+              <div className="flex items-center gap-2 text-[var(--accent)]">
+                <Focus className="w-3 h-3" />
+                <span className="text-[10px] font-bold uppercase tracking-widest">Precision Controls</span>
+              </div>
+
+              <div className="space-y-4">
+                {/* Lighting */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] uppercase tracking-tighter">
+                    <div className="flex items-center gap-1.5">
+                      <Sun className="w-3 h-3" />
+                      <span>Lighting Style</span>
+                    </div>
+                  </div>
+                  <select 
+                    value={config.lighting}
+                    onChange={(e) => updateConfig({ lighting: e.target.value as any })}
+                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[10px] font-mono uppercase focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)] appearance-none cursor-pointer"
+                  >
+                    <option value="studio">Studio (Clean)</option>
+                    <option value="natural">Natural (Soft)</option>
+                    <option value="dramatic">Dramatic (High Contrast)</option>
+                    <option value="high-key">High-Key (Bright)</option>
+                    <option value="low-key">Low-Key (Moody)</option>
+                    <option value="neon">Neon (Cyberpunk)</option>
+                  </select>
+                </div>
+
+                {/* Composition */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] uppercase tracking-tighter">
+                    <div className="flex items-center gap-1.5">
+                      <LayoutIcon className="w-3 h-3" />
+                      <span>Composition</span>
+                    </div>
+                  </div>
+                  <select 
+                    value={config.composition}
+                    onChange={(e) => updateConfig({ composition: e.target.value as any })}
+                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[10px] font-mono uppercase focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)] appearance-none cursor-pointer"
+                  >
+                    <option value="rule-of-thirds">Rule of Thirds</option>
+                    <option value="centered">Centered</option>
+                    <option value="minimalist">Minimalist</option>
+                    <option value="dynamic">Dynamic (Action)</option>
+                    <option value="macro">Macro (Close-up)</option>
+                  </select>
+                </div>
+
+                {/* Color Mood */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] uppercase tracking-tighter">
+                    <div className="flex items-center gap-1.5">
+                      <Droplets className="w-3 h-3" />
+                      <span>Color Mood</span>
+                    </div>
+                  </div>
+                  <select 
+                    value={config.colorMood}
+                    onChange={(e) => updateConfig({ colorMood: e.target.value as any })}
+                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[10px] font-mono uppercase focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)] appearance-none cursor-pointer"
+                  >
+                    <option value="warm">Warm (Inviting)</option>
+                    <option value="cool">Cool (Modern)</option>
+                    <option value="neutral">Neutral (True)</option>
+                    <option value="high-contrast">High Contrast</option>
+                    <option value="vintage">Vintage (Film)</option>
+                    <option value="vibrant">Vibrant (Pop)</option>
+                  </select>
+                </div>
               </div>
             </section>
           </div>
         )}
 
         {activeTab === 'layout' && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {/* Layout Presets */}
-            <section className="space-y-4">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Layout Presets</label>
-              <div className="space-y-3">
+            <section className="space-y-3">
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <LayoutIcon className="w-3 h-3" /> Layout Presets
+              </label>
+              <div className="grid grid-cols-2 gap-2">
                 <button 
                   onClick={() => updateConfig({ aspectRatio: '16:9', width: 1920, height: 700 })}
-                  className={`w-full flex items-center gap-4 p-4 rounded-2xl border transition-all text-left ${config.aspectRatio === '16:9' ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-center ${config.aspectRatio === '16:9' ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
                 >
-                  <div className={`p-3 rounded-xl ${config.aspectRatio === '16:9' ? 'bg-[var(--accent)]/20' : 'bg-[var(--input-bg)]'}`}>
-                    <RectangleHorizontal className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold uppercase text-[var(--text-primary)]">Vertical Continuity</h4>
-                    <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">Optimized for web banners & A+ content (16:9 folds)</p>
-                  </div>
+                  <RectangleHorizontal className="w-5 h-5" />
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Vertical</span>
                 </button>
 
                 <button 
                   onClick={() => updateConfig({ aspectRatio: '1:1', width: 1080, height: 1080 })}
-                  className={`w-full flex items-center gap-4 p-4 rounded-2xl border transition-all text-left ${config.aspectRatio === '1:1' ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-center ${config.aspectRatio === '1:1' ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-[var(--card-bg)]/50 border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
                 >
-                  <div className={`p-3 rounded-xl ${config.aspectRatio === '1:1' ? 'bg-[var(--accent)]/20' : 'bg-[var(--input-bg)]'}`}>
-                    <Square className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold uppercase text-[var(--text-primary)]">Square Continuity</h4>
-                    <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">Optimized for social media stacks (1:1 folds)</p>
-                  </div>
+                  <Square className="w-5 h-5" />
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Square</span>
                 </button>
               </div>
             </section>
 
-            {/* Custom Dimensions */}
-            <section className="space-y-4">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Custom Dimensions (Per Fold)</label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase">Width</span>
-                  <input 
-                    type="number"
-                    value={config.width}
-                    onChange={(e) => updateConfig({ width: parseInt(e.target.value) })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase">Height</span>
-                  <input 
-                    type="number"
-                    value={config.height}
-                    onChange={(e) => updateConfig({ height: parseInt(e.target.value) })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* Folds */}
-            <section className="space-y-4">
+            {/* Precision Dimensions */}
+            <section className="p-4 rounded-xl bg-[var(--card-bg)]/30 border border-[var(--border)] space-y-4">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Vertical Folds</label>
-                <span className="text-[var(--accent)] font-mono text-xs">{config.folds}</span>
+                <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Precision Dimensions</label>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] text-[9px] font-mono">
+                  <div className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse" />
+                  LIVE
+                </div>
               </div>
-              <input 
-                type="range" 
-                min="4" 
-                max="8" 
-                step="1"
-                value={config.folds}
-                onChange={(e) => updateConfig({ folds: parseInt(e.target.value) })}
-                className="w-full accent-[var(--accent)]"
-              />
-              <div className="flex justify-between text-[10px] font-mono text-[var(--text-secondary)]">
-                <span>4 FOLDS</span>
-                <span>8 FOLDS</span>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase tracking-tighter">Width (px)</span>
+                  <div className="relative">
+                    <input 
+                      type="number"
+                      value={config.width}
+                      onChange={(e) => updateConfig({ width: parseInt(e.target.value) })}
+                      className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[11px] font-mono focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-4 border-r border-[var(--border)]" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase tracking-tighter">Height (px)</span>
+                  <div className="relative">
+                    <input 
+                      type="number"
+                      value={config.height}
+                      onChange={(e) => updateConfig({ height: parseInt(e.target.value) })}
+                      className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-[11px] font-mono focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-4 border-r border-[var(--border)]" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border)]/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase tracking-tighter">Fold Count</span>
+                  <span className="text-[var(--accent)] font-mono text-xs">{config.folds}</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="8" 
+                  step="1"
+                  value={config.folds}
+                  onChange={(e) => updateConfig({ folds: parseInt(e.target.value) })}
+                  className="w-full accent-[var(--accent)] h-1.5 bg-[var(--input-bg)] rounded-full appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between mt-1 text-[8px] font-mono text-[var(--text-secondary)] opacity-50">
+                  <span>MIN: 1</span>
+                  <span>MAX: 8</span>
+                </div>
               </div>
             </section>
 
-            {/* Resolution */}
+            {/* Continuity Engine */}
+            <section className="p-4 rounded-xl bg-[var(--accent)]/5 border border-[var(--accent)]/10 space-y-4 relative overflow-hidden">
+              {/* Hardware-style background pattern */}
+              <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, var(--accent) 1px, transparent 1px)', backgroundSize: '12px 12px' }} />
+              
+              <div className="flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-2 text-[var(--accent)]">
+                  <Settings className="w-3 h-3" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Continuity Engine v2.4</span>
+                </div>
+                <div className="px-1.5 py-0.5 rounded border border-[var(--accent)]/30 text-[var(--accent)] text-[8px] font-mono uppercase">
+                  Active
+                </div>
+              </div>
+              
+              <div className="space-y-5 relative z-10">
+                {[
+                  { label: 'Edge Alignment', key: 'edgeAlignment' },
+                  { label: 'Seam Blending', key: 'seamBlending' },
+                  { label: 'Depth Mapping', key: 'depthMapping' }
+                ].map((item) => (
+                  <div key={item.key} className="space-y-2">
+                    <div className="flex items-center justify-between text-[9px] text-[var(--text-secondary)] font-mono uppercase tracking-tighter">
+                      <span>{item.label}</span>
+                      <span className="text-[var(--accent)]">{(config.continuityEngine as any)[item.key]}%</span>
+                    </div>
+                    <div className="relative h-1.5 bg-[var(--input-bg)] rounded-full overflow-hidden border border-[var(--border)]/30">
+                      <div 
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent)]/40 to-[var(--accent)] transition-all duration-300"
+                        style={{ width: `${(config.continuityEngine as any)[item.key]}%` }}
+                      />
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        value={(config.continuityEngine as any)[item.key]}
+                        onChange={(e) => updateConfig({ 
+                          continuityEngine: { ...config.continuityEngine, [item.key]: parseInt(e.target.value) } 
+                        })}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-2 flex items-center justify-between text-[8px] font-mono text-[var(--text-secondary)] uppercase tracking-widest opacity-50 relative z-10">
+                <span>Sync: Enabled</span>
+                <span>Buffer: 256ms</span>
+              </div>
+            </section>
+
+            {/* Output Resolution */}
             <section className="space-y-3">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Output Resolution</label>
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <Monitor className="w-3 h-3" /> Output Resolution
+              </label>
               <div className="grid grid-cols-3 gap-2">
                 {(['1K', '2K', '4K'] as const).map(res => (
                   <button 
                     key={res}
                     onClick={() => updateConfig({ resolution: res })}
-                    className={`py-2 rounded-lg border text-[10px] font-bold transition-all ${config.resolution === res ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)]'}`}
+                    className={`py-2 rounded-lg border text-[10px] font-bold transition-all ${config.resolution === res ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30'}`}
                   >
                     {res}
                   </button>
                 ))}
               </div>
-              <p className="text-[9px] text-[var(--text-secondary)] italic">4K uses AI super-resolution pipeline</p>
-            </section>
-
-            {/* Continuity Engine */}
-            <section className="p-4 rounded-xl bg-[var(--accent)]/5 border border-[var(--accent)]/10 space-y-3">
-              <div className="flex items-center gap-2 text-[var(--accent)]">
-                <Settings className="w-3 h-3" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Continuity Engine</span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
-                  <span>Edge Alignment</span>
-                  <span className="text-[var(--accent)]">ACTIVE</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
-                  <span>Seam Blending</span>
-                  <span className="text-[var(--accent)]">ACTIVE</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)]">
-                  <span>Depth Mapping</span>
-                  <span className="text-[var(--accent)]">ACTIVE</span>
-                </div>
+              <div className="flex items-center gap-2 p-2 rounded bg-[var(--card-bg)]/50 border border-dashed border-[var(--border)]">
+                <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                <p className="text-[9px] text-[var(--text-secondary)]">AI Super-Resolution pipeline active for 4K exports</p>
               </div>
             </section>
           </div>
         )}
 
         {activeTab === 'assets' && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {/* Brand Presets */}
             <section className="space-y-3">
               <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
@@ -877,158 +981,122 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <div className="flex items-center gap-3">
                       {brand.logo ? (
-                        <img src={brand.logo} className="w-6 h-6 object-contain rounded bg-[var(--text-primary)]/10 p-0.5" alt={brand.name} referrerPolicy="no-referrer" />
+                        <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center p-1 overflow-hidden">
+                          <img src={brand.logo} className="w-full h-full object-contain" alt={brand.name} referrerPolicy="no-referrer" />
+                        </div>
                       ) : (
-                        <div className="flex gap-0.5">
+                        <div className="flex -space-x-1">
                           {brand.colors.map((c, i) => (
-                            <div key={i} className="w-2 h-2 rounded-full" style={{ backgroundColor: c }} />
+                            <div key={i} className="w-4 h-4 rounded-full border-2 border-[var(--card-bg)]" style={{ backgroundColor: c }} />
                           ))}
                         </div>
                       )}
-                      <span className="text-xs font-medium">{brand.name}</span>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-bold uppercase tracking-tight text-[var(--text-primary)]">{brand.name}</span>
+                        <span className="text-[9px] text-[var(--text-secondary)] uppercase tracking-widest">Active Preset</span>
+                      </div>
                     </div>
                     {config.activeBrandId === brand.id ? (
-                      <Check className="w-3 h-3 text-[var(--accent)]" />
+                      <div className="w-5 h-5 rounded-full bg-[var(--accent)] flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
                     ) : (
-                      <PlusCircle className="w-3 h-3 text-[var(--text-secondary)]/50 group-hover:text-[var(--text-secondary)]" />
+                      <PlusCircle className="w-4 h-4 text-[var(--text-secondary)]/50 group-hover:text-[var(--text-secondary)]" />
                     )}
                   </button>
                 ))}
               </div>
             </section>
 
-            {/* Product Reference */}
-            <section className="space-y-3">
+            {/* Reference Assets */}
+            <section className="space-y-4">
               <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
-                <Package className="w-3 h-3" /> Product Reference
+                <Layers className="w-3 h-3" /> Reference Assets
               </label>
-              <div 
-                onClick={() => handleFileClick('product')}
-                onDragOver={(e) => handleDragOver(e, 'product')}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, 'product')}
-                className={`relative aspect-[3/2] rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden ${draggingType === 'product' ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] hover:border-[var(--accent)]/30'}`}
-              >
-                {config.productRef?.image ? (
-                  <>
-                    <img src={config.productRef.image} className="w-full h-full object-cover" alt="Product Ref" />
-                    <button 
-                      onClick={(e) => handleDelete(e, 'product')}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
-                    <span className="text-[8px] text-[var(--text-secondary)] mt-1">Upload Product</span>
-                  </>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-[var(--text-secondary)] uppercase">
-                  <span>Product Strength</span>
-                  <span>{config.productRef?.strength}%</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={config.productRef?.strength}
-                  onChange={(e) => updateConfig({ productRef: { ...config.productRef, strength: parseInt(e.target.value) } })}
-                  className="w-full h-1 accent-[var(--accent)] bg-[var(--input-bg)] rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </section>
+              
+              <div className="space-y-4">
+                {[
+                  { id: 'product', label: 'Product Ref', icon: Package, aspect: 'aspect-[3/2]', key: 'productRef' },
+                  { id: 'style', label: 'Style Ref', icon: Palette, aspect: 'aspect-[21/9]', key: 'styleRef' },
+                  { id: 'image', label: 'Image Ref', icon: Layers, aspect: 'aspect-[21/9]', key: 'imageRef' }
+                ].map((ref) => (
+                  <div key={ref.id} className="p-3 rounded-xl bg-[var(--card-bg)]/30 border border-[var(--border)] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                        <ref.icon className="w-3 h-3" />
+                        <span className="text-[10px] font-bold uppercase tracking-tighter">{ref.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {ref.id === 'style' && (config as any)[ref.key]?.image && (
+                          <button 
+                            onClick={async () => {
+                              setIsDescribing(true);
+                              try {
+                                const description = await AIService.getInstance().describeImage((config as any)[ref.key].image, config.textModelId);
+                                updateConfig({ prompt: `${config.prompt} Style: ${description}` });
+                              } catch (e) {
+                                console.error(e);
+                              } finally {
+                                setIsDescribing(false);
+                              }
+                            }}
+                            disabled={isDescribing}
+                            className="text-[9px] font-bold text-[var(--accent)] hover:text-[var(--accent)]/80 uppercase tracking-widest transition-colors flex items-center gap-1"
+                          >
+                            {isDescribing ? <Loader2 className="w-2 h-2 animate-spin" /> : <Sparkles className="w-2 h-2" />}
+                            Describe
+                          </button>
+                        )}
+                        {(config as any)[ref.key]?.image && (
+                          <button 
+                            onClick={(e) => handleDelete(e, ref.id as any)}
+                            className="text-[9px] font-bold text-red-400 hover:text-red-300 uppercase tracking-widest transition-colors"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-            {/* Style Reference */}
-            <section className="space-y-3">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
-                <Palette className="w-3 h-3" /> Style Reference
-              </label>
-              <div 
-                onClick={() => handleFileClick('style')}
-                onDragOver={(e) => handleDragOver(e, 'style')}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, 'style')}
-                className={`relative aspect-[21/9] rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden ${draggingType === 'style' ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] hover:border-[var(--accent)]/30'}`}
-              >
-                {config.styleRef?.image ? (
-                  <>
-                    <img src={config.styleRef.image} className="w-full h-full object-cover" alt="Style Ref" />
-                    <button 
-                      onClick={(e) => handleDelete(e, 'style')}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
+                    <div 
+                      onClick={() => handleFileClick(ref.id as any)}
+                      onDragOver={(e) => handleDragOver(e, ref.id as any)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, ref.id as any)}
+                      className={`relative ${ref.aspect} rounded-lg border border-dashed flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden ${draggingType === ref.id ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] hover:border-[var(--accent)]/30'}`}
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
-                    <span className="text-[8px] text-[var(--text-secondary)] mt-1">Upload Moodboard</span>
-                  </>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-[var(--text-secondary)] uppercase">
-                  <span>Style Strength</span>
-                  <span>{config.styleRef?.strength}%</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={config.styleRef?.strength}
-                  onChange={(e) => updateConfig({ styleRef: { ...config.styleRef, strength: parseInt(e.target.value) } })}
-                  className="w-full h-1 accent-[var(--accent)] bg-[var(--input-bg)] rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </section>
+                      {(config as any)[ref.key]?.image ? (
+                        <img src={(config as any)[ref.key].image} className="w-full h-full object-cover" alt={ref.label} />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <Plus className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--accent)]" />
+                          <span className="text-[8px] text-[var(--text-secondary)] uppercase tracking-widest">Upload</span>
+                        </div>
+                      )}
+                    </div>
 
-            {/* Image Reference */}
-            <section className="space-y-3">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
-                <Layers className="w-3 h-3" /> Image Reference
-              </label>
-              <div 
-                onClick={() => handleFileClick('image')}
-                onDragOver={(e) => handleDragOver(e, 'image')}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, 'image')}
-                className={`relative aspect-[21/9] rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden ${draggingType === 'image' ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] hover:border-[var(--accent)]/30'}`}
-              >
-                {config.imageRef?.image ? (
-                  <>
-                    <img src={config.imageRef.image} className="w-full h-full object-cover" alt="Image Ref" />
-                    <button 
-                      onClick={(e) => handleDelete(e, 'image')}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
-                    <span className="text-[8px] text-[var(--text-secondary)] mt-1">Upload Reference</span>
-                  </>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-[var(--text-secondary)] uppercase">
-                  <span>Ref Strength</span>
-                  <span>{config.imageRef?.strength}%</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={config.imageRef?.strength}
-                  onChange={(e) => updateConfig({ imageRef: { ...config.imageRef, strength: parseInt(e.target.value) } })}
-                  className="w-full h-1 accent-[var(--accent)] bg-[var(--input-bg)] rounded-lg appearance-none cursor-pointer"
-                />
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[9px] font-mono text-[var(--text-secondary)] uppercase">
+                        <span>Influence Strength</span>
+                        <span className="text-[var(--accent)]">{(config as any)[ref.key]?.strength}%</span>
+                      </div>
+                      <div className="relative h-1 bg-[var(--input-bg)] rounded-full overflow-hidden">
+                        <div 
+                          className="absolute inset-y-0 left-0 bg-[var(--accent)] transition-all"
+                          style={{ width: `${(config as any)[ref.key]?.strength}%` }}
+                        />
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          value={(config as any)[ref.key]?.strength}
+                          onChange={(e) => updateConfig({ [ref.key]: { ...(config as any)[ref.key], strength: parseInt(e.target.value) } })}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           </div>
@@ -1036,27 +1104,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {activeTab === 'typography' && (
           <div className="space-y-8">
-            {/* Precision Controls */}
-            <section className="space-y-3">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Precision Controls</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => updateConfig({ showGuides: !config.showGuides })}
-                  className={`flex items-center justify-center gap-2 py-2 rounded-lg border text-[10px] font-bold transition-all ${config.showGuides ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)]'}`}
-                >
-                  <Grid className="w-3 h-3" />
-                  SHOW GUIDES
-                </button>
-                <button 
-                  onClick={() => updateConfig({ snapToGrid: !config.snapToGrid })}
-                  className={`flex items-center justify-center gap-2 py-2 rounded-lg border text-[10px] font-bold transition-all ${config.snapToGrid ? 'bg-[var(--accent)]/10 border-[var(--accent)]/50 text-[var(--accent)]' : 'bg-transparent border-[var(--border)] text-[var(--text-secondary)]'}`}
-                >
-                  <Zap className="w-3 h-3" />
-                  SNAP TO GRID
-                </button>
-              </div>
-            </section>
-
             {/* Headings Section */}
             <section className="space-y-4">
               <div className="flex items-center justify-between">
@@ -1214,6 +1261,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            <section className="space-y-4">
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <History className="w-3 h-3" /> Generation History
+              </label>
+              <div className="space-y-3">
+                {generationHistory.length > 0 ? (
+                  generationHistory.map((item) => (
+                    <div 
+                      key={item.id}
+                      className="bg-[var(--input-bg)] border border-[var(--border)] rounded-xl p-3 space-y-3 group hover:border-[var(--accent)]/50 transition-all cursor-pointer"
+                      onClick={() => onLoadHistoryItem(item)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono text-[var(--text-secondary)]">
+                          {new Date(item.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteHistoryItem(item.id);
+                          }}
+                          className="text-[var(--text-secondary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                        {item.options[0]?.folds.map((fold, i) => (
+                          <img 
+                            key={i}
+                            src={fold}
+                            alt={`Fold ${i + 1}`}
+                            className="w-12 h-8 object-cover rounded-md border border-[var(--border)] flex-shrink-0"
+                          />
+                        ))}
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-[var(--text-primary)] font-medium line-clamp-1 truncate">
+                          {item.config.prompt}
+                        </p>
+                        <div className="flex items-center gap-2 text-[8px] font-mono text-[var(--text-secondary)] uppercase tracking-widest">
+                          <span>{item.config.folds} Folds</span>
+                          <span>•</span>
+                          <span>{item.config.resolution}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center border border-dashed border-[var(--border)] rounded-2xl">
+                    <History className="w-8 h-8 text-[var(--text-secondary)]/20 mx-auto mb-3" />
+                    <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-widest">No history yet</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="space-y-8">
             {/* Project Management */}
@@ -1289,77 +1399,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </div>
             </section>
-
-            {/* Canvas Settings */}
-            <section className="space-y-4">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
-                <Grid className="w-3 h-3" /> Canvas Settings
-              </label>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-[var(--card-bg)]/50 border border-[var(--border)] rounded-2xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
-                      <Grid size={16} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-[var(--text-primary)]">Snap to Grid</p>
-                      <p className="text-[10px] text-[var(--text-secondary)]">Align layers automatically</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => updateConfig({ snapToGrid: !config.snapToGrid })}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${config.snapToGrid ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}
-                  >
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${config.snapToGrid ? 'left-6' : 'left-1'}`} />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-[var(--card-bg)]/50 border border-[var(--border)] rounded-2xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)]">
-                      <Maximize2 size={16} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-[var(--text-primary)]">Show Guides</p>
-                      <p className="text-[10px] text-[var(--text-secondary)]">Display layout markers</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => updateConfig({ showGuides: !config.showGuides })}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${config.showGuides ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}
-                  >
-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${config.showGuides ? 'left-6' : 'left-1'}`} />
-                  </button>
-                </div>
-              </div>
-            </section>
           </div>
         )}
       </div>
 
-      {/* Action Button */}
-      <div className="p-6 border-t border-[var(--border)] bg-[var(--card-bg)]/40">
+      {/* Action Area */}
+      <div className="p-6 border-t border-[var(--border)] bg-[var(--card-bg)]/40 space-y-4">
         <button 
           onClick={onGenerate}
           disabled={!isGenerating && !config.prompt}
-          className={`w-full font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-3 group ${
+          className={`w-full font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-3 group relative overflow-hidden ${
             isGenerating 
               ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
-              : 'bg-[var(--accent)] hover:bg-[var(--accent)]/90 disabled:bg-[var(--border)] disabled:text-[var(--text-secondary)]/40 text-white shadow-[var(--accent)]/20'
+              : 'bg-[var(--accent)] hover:bg-[var(--accent)]/90 disabled:bg-[var(--border)] disabled:text-[var(--text-secondary)]/40 text-black shadow-[var(--accent)]/20'
           }`}
         >
           {isGenerating ? (
             <>
               <div className="w-4 h-4 border-2 border-t-transparent border-white rounded-full animate-spin" />
-              <span>STOP GENERATING</span>
+              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px]">Abort_Sequence</span>
             </>
           ) : (
             <>
-              <Zap className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" />
-              <span>GENERATE BANNERS</span>
+              <Zap className="w-4 h-4 fill-current group-hover:scale-110 transition-transform relative z-10" />
+              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px]">Execute_Generation</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
             </>
           )}
         </button>
+
+        {/* System Status Bar */}
+        <div className="flex items-center justify-between pt-4 border-t border-[var(--border)]/30 text-[8px] font-mono text-[var(--text-secondary)] uppercase tracking-[0.3em] opacity-40">
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-1 rounded-full bg-[var(--accent)] animate-pulse shadow-[0_0_5px_var(--accent)]" />
+            <span>System_Ready</span>
+          </div>
+          <span>v4.2.0_Premium</span>
+        </div>
       </div>
     </div>
   );
