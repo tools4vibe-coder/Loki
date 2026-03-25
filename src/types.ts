@@ -1,3 +1,12 @@
+declare global {
+  interface Window {
+    aistudio?: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
+
 export type ModelProvider = 
   | 'google' 
   | 'openai' 
@@ -41,13 +50,26 @@ export interface TextLayer {
   letterSpacing?: number;
   lineHeight?: number;
   textTransform?: 'none' | 'uppercase' | 'lowercase';
+  baselineShift?: number;
+  textShadow?: {
+    enabled: boolean;
+    color: string;
+    blur: number;
+    offsetX: number;
+    offsetY: number;
+  };
+  textOutline?: {
+    enabled: boolean;
+    color: string;
+    width: number;
+  };
 }
 
 export interface BannerConfig {
   folds: number;
   width: number;
   height: number;
-  resolution: '1K' | '2K' | '4K';
+  resolution: '512px' | '720p' | '1K' | '2K' | '4K';
   mode: ('product' | 'campaign' | 'minimal' | 'futuristic' | 'luxury' | 'ecommerce' | 'aplus' | 'lifestyle' | 'cinematic')[];
   prompt: string;
   negativePrompt?: string;

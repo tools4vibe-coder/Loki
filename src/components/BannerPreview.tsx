@@ -20,7 +20,7 @@ export const BannerPreview: React.FC<BannerPreviewProps> = ({
   onRemixFold,
   onDownload
 }) => {
-  const [viewMode, setViewMode] = React.useState<'full' | 'folds'>('full');
+  const [viewMode, setViewMode] = React.useState<'full' | 'folds'>('folds');
   const [showOverlays, setShowOverlays] = React.useState(true);
 
   if (isLoading) {
@@ -95,8 +95,14 @@ export const BannerPreview: React.FC<BannerPreviewProps> = ({
           textTransform: layer.textTransform,
           letterSpacing: `${layer.letterSpacing || 0}px`,
           lineHeight: layer.lineHeight,
+          marginTop: `${layer.baselineShift || 0}px`,
           whiteSpace: 'nowrap',
-          textShadow: isEditing ? 'none' : '0 2px 10px rgba(0,0,0,0.5)',
+          textShadow: layer.textShadow?.enabled 
+            ? `${layer.textShadow.offsetX}px ${layer.textShadow.offsetY}px ${layer.textShadow.blur}px ${layer.textShadow.color}`
+            : isEditing ? 'none' : '0 2px 10px rgba(0,0,0,0.5)',
+          WebkitTextStroke: layer.textOutline?.enabled 
+            ? `${layer.textOutline.width}px ${layer.textOutline.color}`
+            : 'none',
           zIndex: isEditing ? 50 : 10,
           transition: 'all 0.2s ease',
           outline: isEditing ? '1px solid var(--accent)' : 'none',
@@ -169,69 +175,40 @@ export const BannerPreview: React.FC<BannerPreviewProps> = ({
 
         <div className="relative w-full" style={{ maxWidth: fullBannerRatio > 1 ? '800px' : '500px' }}>
           {viewMode === 'full' ? (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="relative shadow-[0_0_100px_rgba(0,0,0,0.5)] overflow-visible rounded-sm border border-[var(--border)] flex flex-col bg-black"
-              style={{ aspectRatio: `${config.width} / ${config.height * config.folds}` }}
-            >
-              {/* Crop Marks */}
-              {showOverlays && (
-                <>
-                  <div className="absolute -top-8 -left-8 w-16 h-16 border-t border-l border-[var(--text-secondary)]/30 pointer-events-none" />
-                  <div className="absolute -top-8 -right-8 w-16 h-16 border-t border-r border-[var(--text-secondary)]/30 pointer-events-none" />
-                  <div className="absolute -bottom-8 -left-8 w-16 h-16 border-b border-l border-[var(--text-secondary)]/30 pointer-events-none" />
-                  <div className="absolute -bottom-8 -right-8 w-16 h-16 border-b border-r border-[var(--text-secondary)]/30 pointer-events-none" />
-                  
-                  {/* Dimension Labels */}
-                  <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-mono text-[var(--text-secondary)] uppercase tracking-[0.2em]">
-                    W: {config.width}PX
-                  </div>
-                  <div className="absolute top-1/2 -right-12 -translate-y-1/2 rotate-90 text-[9px] font-mono text-[var(--text-secondary)] uppercase tracking-[0.2em] whitespace-nowrap">
-                    H: {config.height * config.folds}PX
-                  </div>
-                </>
-              )}
-
-              {selectedOption.folds.map((fold, i) => (
-                <div key={i} className="relative w-full" style={{ height: `${100 / config.folds}%` }}>
-                  <img 
-                    src={fold} 
-                    alt={`Fold ${i + 1}`} 
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                  {/* Fold-Specific Text Layers */}
-                  <div className="absolute inset-0 pointer-events-none">
-                    {renderTextLayers(i)}
-                  </div>
-                  
-                  {/* Fold Label Overlay */}
-                  {showOverlays && (
-                    <div className="absolute top-4 left-4 text-[8px] font-mono text-white/30 tracking-widest pointer-events-none">
-                      FOLD_0{i + 1}
+            <>
+              {/* Master View - Now rendered as separate sections as requested */}
+              <div className="flex flex-col gap-8 w-full">
+                {selectedOption.folds.map((fold, i) => (
+                  <div key={i} className="relative w-full shadow-2xl rounded-sm border border-[var(--border)] bg-black overflow-hidden" 
+                       style={{ aspectRatio: `${config.width} / ${config.height}` }}>
+                    <img 
+                      src={fold} 
+                      alt={`Fold ${i + 1}`} 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                    {/* Fold-Specific Text Layers */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {renderTextLayers(i)}
                     </div>
-                  )}
-                </div>
-              ))}
-              
-              {/* Fold Indicators */}
-              <div className="absolute inset-0 pointer-events-none">
-                {Array.from({ length: config.folds - 1 }).map((_, i) => (
-                  <div 
-                    key={i} 
-                    className="absolute w-full border-t border-[var(--accent)]/30 border-dashed z-20"
-                    style={{ top: `${((i + 1) / config.folds) * 100}%` }}
-                  >
+                    
+                    {/* Fold Label Overlay */}
                     {showOverlays && (
-                      <div className="absolute right-4 -top-2 text-[8px] font-mono text-[var(--accent)]/50 bg-black px-1">
-                        SEAM_LINE
+                      <div className="absolute top-4 left-4 text-[8px] font-mono text-white/30 tracking-widest pointer-events-none">
+                        FOLD_0{i + 1}
+                      </div>
+                    )}
+
+                    {/* Dimension Labels */}
+                    {showOverlays && (
+                      <div className="absolute bottom-4 right-4 text-[8px] font-mono text-[var(--text-secondary)] uppercase tracking-widest pointer-events-none">
+                        {config.width}PX × {config.height}PX
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            </motion.div>
+            </>
           ) : (
             <div className="flex flex-col gap-12">
               {selectedOption.folds.map((fold, i) => (

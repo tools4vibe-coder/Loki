@@ -7,8 +7,9 @@ export const TEXT_MODELS: AIModel[] = [
 
 export const IMAGE_MODELS: AIModel[] = [
   // Google Models
-  { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro (High-Res)', provider: 'google', version: 'Latest', capabilities: ['1K/2K/4K', 'high-res'] },
-  { id: 'gemini-2.5-flash-image', name: 'Google Nano Banana', provider: 'google', version: '2.5', capabilities: ['fast', 'efficient'] },
+  { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash Image (Standard)', provider: 'google', version: '2.5', capabilities: ['fast', 'efficient', 'free'] },
+  { id: 'gemini-3.1-flash-image-preview', name: 'Gemini 3.1 Flash Image (High-Quality)', provider: 'google', version: '3.1', capabilities: ['high-res', 'detail', 'free'] },
+  { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image (Ultra-Res)', provider: 'google', version: '3.0', capabilities: ['1K/2K/4K', 'pro'] },
   
   // Flux Models
   { id: 'flux-1-pro', name: 'FLUX.1 Pro', provider: 'flux', version: 'v1', capabilities: ['realism', 'detail'] },

@@ -14,8 +14,9 @@ export class AIService {
   }
 
   private getGeminiAI() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
+    // Use the user-selected API key if available, otherwise fall back to the environment key
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("API Key is not configured. Please select an API key in the settings.");
     return new GoogleGenAI({ apiKey });
   }
 
@@ -188,7 +189,7 @@ export class AIService {
             config: {
               imageConfig: {
                 aspectRatio: "16:9", // Standard for individual folds
-                imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : '1K'
+                imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
               }
             }
           }));
@@ -310,7 +311,7 @@ export class AIService {
         config: {
           imageConfig: {
             aspectRatio: foldAspectRatio,
-            imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : '1K'
+            imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
           }
         }
       }));

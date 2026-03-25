@@ -2,6 +2,8 @@ import React from 'react';
 import { BannerConfig, ModelProvider, AIModel, TextLayer, GenerationHistoryItem } from '../types';
 import { MODELS, MODES, TEXT_MODELS, IMAGE_MODELS } from '../constants';
 import { AIService } from '../services/aiService';
+import { AdvancedTextModal } from './AdvancedTextModal';
+import { calculateCredits, getApiKeyStatus } from '../lib/usage';
 import { 
   Settings, 
   Monitor,
@@ -32,6 +34,7 @@ import {
   RectangleHorizontal,
   Square,
   Layout,
+  SlidersHorizontal,
   Image,
   Eye,
   EyeOff,
@@ -43,6 +46,7 @@ import {
   Save,
   FolderOpen,
   History,
+  ClipboardCheck,
   Sun,
   Moon,
   Focus,
@@ -75,13 +79,23 @@ interface TextLayerEditorProps {
   updateConfig: (updates: Partial<BannerConfig>) => void;
   folds: number;
   brandColors?: string[];
+  onOpenAdvanced: (layer: TextLayer) => void;
 }
 
-const TextLayerEditor: React.FC<TextLayerEditorProps> = ({ layer, index, updateTextLayer, removeTextLayer, updateConfig, folds, brandColors = [] }) => {
+const TextLayerEditor: React.FC<TextLayerEditorProps> = ({ layer, index, updateTextLayer, removeTextLayer, updateConfig, folds, brandColors = [], onOpenAdvanced }) => {
   return (
     <div className="bg-[var(--input-bg)] border border-[var(--border)] rounded-xl p-4 space-y-4 group">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono text-[var(--text-secondary)]">{layer.type.toUpperCase()} {String(index + 1).padStart(2, '0')}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-[var(--text-secondary)]">{layer.type.toUpperCase()} {String(index + 1).padStart(2, '0')}</span>
+          <button 
+            onClick={() => onOpenAdvanced(layer)}
+            className="p-1 hover:bg-[var(--accent)]/10 rounded text-[var(--accent)] transition-colors"
+            title="Advanced Styling"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+          </button>
+        </div>
         <button 
           onClick={() => removeTextLayer(layer.id)}
           className="text-[var(--text-secondary)] hover:text-red-400 transition-colors"
@@ -374,11 +388,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   theme,
   onToggleTheme
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'model' | 'layout' | 'assets' | 'typography' | 'layers' | 'history' | 'settings'>('model');
+  const [activeTab, setActiveTab] = React.useState<'model' | 'layout' | 'assets' | 'typography' | 'layers' | 'history' | 'settings' | 'check'>('model');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [uploadType, setUploadType] = React.useState<'product' | 'style' | 'image' | null>(null);
   const [draggingType, setDraggingType] = React.useState<'product' | 'style' | 'image' | null>(null);
   const [isDescribing, setIsDescribing] = React.useState(false);
+  const [advancedLayer, setAdvancedLayer] = React.useState<TextLayer | null>(null);
+  const [apiKeyStatus, setApiKeyStatus] = React.useState<{ selected: boolean; label: string }>({ selected: false, label: 'Checking...' });
+
+  React.useEffect(() => {
+    const checkKey = async () => {
+      const status = await getApiKeyStatus();
+      setApiKeyStatus(status);
+    };
+    checkKey();
+  }, [activeTab]);
 
   const updateConfig = (updates: Partial<BannerConfig>) => {
     setConfig(prev => ({ ...prev, ...updates }));
@@ -397,7 +421,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       textAlign: 'center',
       position: { x: 50, y: type === 'heading' ? 20 : type === 'subheading' ? 30 : 40 },
       textTransform: type === 'heading' ? 'uppercase' : 'none',
-      letterSpacing: type === 'heading' ? 2 : 0
+      letterSpacing: type === 'heading' ? 2 : 0,
+      baselineShift: 0,
+      textShadow: { enabled: false, color: '#000000', blur: 4, offsetX: 2, offsetY: 2 },
+      textOutline: { enabled: false, color: '#000000', width: 1 }
     };
     updateConfig({ textLayers: [...config.textLayers, newLayer] });
   };
@@ -520,29 +547,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center justify-between px-2 py-4 border-b border-[var(--border)]">
-        {[
-          { id: 'model', icon: Sparkles, label: 'AI' },
-          { id: 'layout', icon: Layout, label: 'Layout' },
-          { id: 'assets', icon: Image, label: 'Assets' },
-          { id: 'typography', icon: Type, label: 'Text' },
-          { id: 'layers', icon: Layers, label: 'Layers' },
-          { id: 'history', icon: History, label: 'History' },
-          { id: 'settings', icon: Settings, label: 'Settings' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-300 ${
-              activeTab === tab.id 
-                ? 'text-[var(--accent)] bg-[var(--accent-glow)] shadow-[0_0_15px_var(--accent-glow)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--accent-glow)]'
-            }`}
-          >
-            <tab.icon size={18} />
-            <span className="text-[9px] font-medium uppercase tracking-wider">{tab.label}</span>
-          </button>
-        ))}
+      <div className="relative border-b border-[var(--border)] bg-[var(--card-bg)]/40 backdrop-blur-md sticky top-0 z-20">
+        <div className="flex items-center gap-1.5 px-3 py-2.5 overflow-x-auto no-scrollbar snap-x scroll-smooth">
+          {[
+            { id: 'model', icon: Sparkles, label: 'AI' },
+            { id: 'layout', icon: Layout, label: 'Layout' },
+            { id: 'assets', icon: Image, label: 'Assets' },
+            { id: 'typography', icon: Type, label: 'Text' },
+            { id: 'layers', icon: Layers, label: 'Layers' },
+            { id: 'check', icon: ClipboardCheck, label: 'Check' },
+            { id: 'history', icon: History, label: 'History' },
+            { id: 'settings', icon: Settings, label: 'Settings' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 min-w-[64px] py-2 rounded-xl transition-all duration-300 snap-center relative group ${
+                activeTab === tab.id 
+                  ? 'text-[var(--accent)]' 
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {activeTab === tab.id && (
+                <div className="absolute inset-0 bg-[var(--accent-glow)] rounded-xl border border-[var(--accent)]/20 shadow-[0_0_15px_var(--accent-glow)] animate-in fade-in zoom-in duration-300" />
+              )}
+              <tab.icon 
+                size={16} 
+                className={`relative z-10 transition-transform duration-300 ${
+                  activeTab === tab.id ? 'scale-110' : 'group-hover:scale-110'
+                }`} 
+              />
+              <span className="relative z-10 text-[9px] font-bold uppercase tracking-[0.1em] leading-none">
+                {tab.label}
+              </span>
+              {activeTab === tab.id && (
+                <div className="absolute -bottom-[10px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Edge Fades */}
+        <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[var(--card-bg)] to-transparent pointer-events-none z-10 opacity-80" />
+        <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--card-bg)] to-transparent pointer-events-none z-10 opacity-80" />
       </div>
 
       {/* Scrollable Content */}
@@ -946,8 +992,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
                 <Monitor className="w-3 h-3" /> Output Resolution
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['1K', '2K', '4K'] as const).map(res => (
+              <div className="grid grid-cols-5 gap-2">
+                {(['512px', '720p', '1K', '2K', '4K'] as const).map(res => (
                   <button 
                     key={res}
                     onClick={() => updateConfig({ resolution: res })}
@@ -1128,6 +1174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     updateConfig={updateConfig}
                     folds={config.folds}
                     brandColors={activeBrandColors}
+                    onOpenAdvanced={(l) => setAdvancedLayer(l)}
                   />
                 ))}
               </div>
@@ -1157,6 +1204,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     updateConfig={updateConfig}
                     folds={config.folds}
                     brandColors={activeBrandColors}
+                    onOpenAdvanced={(l) => setAdvancedLayer(l)}
                   />
                 ))}
               </div>
@@ -1186,6 +1234,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     updateConfig={updateConfig}
                     folds={config.folds}
                     brandColors={activeBrandColors}
+                    onOpenAdvanced={(l) => setAdvancedLayer(l)}
                   />
                 ))}
               </div>
@@ -1256,6 +1305,116 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <p className="text-xs text-[var(--text-secondary)]">No layers to display.</p>
                   </div>
                 )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'check' && (
+          <div className="space-y-6">
+            <section className="space-y-4">
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <ClipboardCheck className="w-3 h-3" /> Parameter Validation
+              </label>
+              
+              <div className="space-y-3">
+                {/* Prompt Check */}
+                <div className={`p-4 rounded-xl border transition-all ${config.prompt.length > 10 ? 'bg-green-500/5 border-green-500/20' : 'bg-yellow-500/5 border-yellow-500/20'}`}>
+                   <div className="flex items-center justify-between mb-2">
+                     <span className="text-[10px] font-bold uppercase tracking-wider">Prompt Analysis</span>
+                     {config.prompt.length > 10 ? <Check className="w-3 h-3 text-green-500" /> : <Info className="w-3 h-3 text-yellow-500" />}
+                   </div>
+                   <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                     {config.prompt.length === 0 ? 'No prompt provided. Generation will fail.' : 
+                      config.prompt.length < 20 ? 'Prompt is quite short. Results might be unpredictable.' : 
+                      'Prompt length is optimal for detailed generation.'}
+                   </p>
+                </div>
+
+                {/* Continuity Check */}
+                <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card-bg)]/50">
+                   <div className="flex items-center justify-between mb-2">
+                     <span className="text-[10px] font-bold uppercase tracking-wider">Continuity Engine</span>
+                     <Check className="w-3 h-3 text-green-500" />
+                   </div>
+                   <div className="grid grid-cols-3 gap-2">
+                      <div className="text-center">
+                        <div className="text-[8px] text-[var(--text-secondary)] uppercase">Alignment</div>
+                        <div className="text-[10px] font-mono text-[var(--accent)]">{config.continuityEngine.edgeAlignment}%</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[8px] text-[var(--text-secondary)] uppercase">Blending</div>
+                        <div className="text-[10px] font-mono text-[var(--accent)]">{config.continuityEngine.seamBlending}%</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[8px] text-[var(--text-secondary)] uppercase">Depth</div>
+                        <div className="text-[10px] font-mono text-[var(--accent)]">{config.continuityEngine.depthMapping}%</div>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Layers Check */}
+                <div className={`p-4 rounded-xl border transition-all ${config.textLayers.length > 0 ? 'bg-green-500/5 border-green-500/20' : 'bg-blue-500/5 border-blue-500/20'}`}>
+                   <div className="flex items-center justify-between mb-2">
+                     <span className="text-[10px] font-bold uppercase tracking-wider">Typography Layers</span>
+                     {config.textLayers.length > 0 ? <Check className="w-3 h-3 text-green-500" /> : <Info className="w-3 h-3 text-blue-500" />}
+                   </div>
+                   <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+                     {config.textLayers.length === 0 ? 'No text layers added. Banner will be background-only.' : 
+                      `${config.textLayers.length} text layers configured across ${config.folds} folds.`}
+                   </p>
+                </div>
+
+                {/* Technical Specs */}
+                <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card-bg)]/50">
+                   <div className="flex items-center justify-between mb-2">
+                     <span className="text-[10px] font-bold uppercase tracking-wider">Technical Summary</span>
+                     <Check className="w-3 h-3 text-green-500" />
+                   </div>
+                   <div className="space-y-2">
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-[var(--text-secondary)]">RESOLUTION</span>
+                        <span className="text-[var(--text-primary)]">{config.resolution}</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-[var(--text-secondary)]">TOTAL WIDTH</span>
+                        <span className="text-[var(--text-primary)]">{config.width * config.folds}PX</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-[var(--text-secondary)]">ASPECT RATIO</span>
+                        <span className="text-[var(--text-primary)]">{config.aspectRatio}</span>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Usage & Credits */}
+                <div className="p-4 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5">
+                   <div className="flex items-center justify-between mb-3">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">Usage & Credits</span>
+                     <Zap className="w-3 h-3 text-[var(--accent)] animate-pulse" />
+                   </div>
+                   <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase">Estimated Credits</span>
+                        <span className="text-sm font-bold text-[var(--accent)] font-mono">{calculateCredits(config)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-mono text-[var(--text-secondary)] uppercase">API Key Status</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-1.5 h-1.5 rounded-full ${apiKeyStatus.selected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+                          <span className={`text-[9px] font-bold uppercase tracking-widest ${apiKeyStatus.selected ? 'text-green-500' : 'text-red-500'}`}>
+                            {apiKeyStatus.label}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-[var(--accent)]/10">
+                        <p className="text-[8px] text-[var(--text-secondary)] uppercase tracking-wider leading-relaxed">
+                          * Credits are calculated based on resolution, fold count, and selected AI models. 
+                          Premium models consume 2x credits.
+                        </p>
+                      </div>
+                   </div>
+                </div>
               </div>
             </section>
           </div>
@@ -1362,8 +1521,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               </div>
+            </section>
 
-              {/* Saved Projects List */}
+            {/* Generation Parameters */}
+            <section className="space-y-4">
+              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                <Zap className="w-3 h-3" /> Generation Parameters
+              </label>
+              
+              <div className="bg-[var(--card-bg)]/50 border border-[var(--border)] rounded-2xl p-4 space-y-3">
+                {[
+                  { id: 'autoBestVersion', label: 'Auto Best Version', desc: 'Selects the highest quality output automatically', icon: Sparkles },
+                  { id: 'compareMode', label: 'Compare Mode', desc: 'Generate multiple variations for comparison', icon: Grid },
+                  { id: 'hybridBlend', label: 'Hybrid Blend', desc: 'Mixes multiple generation styles for unique results', icon: Droplets },
+                ].map((param) => (
+                  <div key={param.id} className="flex items-center justify-between p-3 bg-[var(--bg)]/40 rounded-xl border border-[var(--border)]">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${(config as any)[param.id] ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-[var(--input-bg)] text-[var(--text-secondary)]'}`}>
+                        <param.icon size={14} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-[var(--text-primary)]">{param.label}</p>
+                        <p className="text-[10px] text-[var(--text-secondary)]">{param.desc}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => updateConfig({ [param.id]: !(config as any)[param.id] })}
+                      className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${ (config as any)[param.id] ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${ (config as any)[param.id] ? 'left-6' : 'left-1'}`} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Saved Projects List */}
+            <section className="space-y-4">
               <div className="space-y-2">
                 <label className="text-[9px] font-bold text-[var(--text-secondary)]/60 uppercase px-1">Saved Projects</label>
                 <div className="space-y-1 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
@@ -1405,25 +1599,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Action Area */}
       <div className="p-6 border-t border-[var(--border)] bg-[var(--card-bg)]/40 space-y-4">
+        {!isGenerating && (
+          <button 
+            onClick={() => setActiveTab('check')}
+            className={`w-full py-2.5 rounded-xl border border-[var(--border)] bg-[var(--card-bg)]/50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-widest ${activeTab === 'check' ? 'border-[var(--accent)]/50 text-[var(--accent)] bg-[var(--accent)]/5' : ''}`}
+          >
+            <ClipboardCheck className="w-3.5 h-3.5" />
+            Check Parameters
+          </button>
+        )}
         <button 
           onClick={onGenerate}
           disabled={!isGenerating && !config.prompt}
-          className={`w-full font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-3 group relative overflow-hidden ${
+          className={`w-full font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-3 group relative overflow-hidden border border-white/10 ${
             isGenerating 
-              ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
-              : 'bg-[var(--accent)] hover:bg-[var(--accent)]/90 disabled:bg-[var(--border)] disabled:text-[var(--text-secondary)]/40 text-black shadow-[var(--accent)]/20'
+              ? 'bg-red-500/10 border-red-500/50 text-red-500 hover:bg-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]' 
+              : 'bg-gradient-to-r from-[var(--accent)] to-[#60a5fa] text-black shadow-[0_0_30px_var(--accent-glow)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30 disabled:grayscale disabled:hover:scale-100 animate-pulse-glow'
           }`}
         >
           {isGenerating ? (
             <>
-              <div className="w-4 h-4 border-2 border-t-transparent border-white rounded-full animate-spin" />
-              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px]">Abort_Sequence</span>
+              <div className="w-4 h-4 border-2 border-t-transparent border-red-500 rounded-full animate-spin" />
+              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px] font-black">Stop_Generation</span>
             </>
           ) : (
             <>
               <Zap className="w-4 h-4 fill-current group-hover:scale-110 transition-transform relative z-10" />
-              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px]">Execute_Generation</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
+              <span className="relative z-10 uppercase tracking-[0.2em] text-[10px] font-black">Generate_Banner</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:animate-shimmer" />
             </>
           )}
         </button>
@@ -1437,6 +1640,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>v4.2.0_Premium</span>
         </div>
       </div>
+
+      {advancedLayer && (
+        <AdvancedTextModal 
+          layer={advancedLayer}
+          onUpdate={(updates) => {
+            updateTextLayer(advancedLayer.id, updates);
+            setAdvancedLayer(prev => prev ? { ...prev, ...updates } : null);
+          }}
+          onClose={() => setAdvancedLayer(null)}
+        />
+      )}
     </div>
   );
 };

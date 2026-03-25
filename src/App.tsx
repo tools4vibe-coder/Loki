@@ -4,8 +4,9 @@ import { BannerPreview } from './components/BannerPreview';
 import { VariationGallery } from './components/VariationGallery';
 import { BannerConfig, BannerOption, GenerationHistoryItem } from './types';
 import { AIService } from './services/aiService';
+import { calculateCredits, getApiKeyStatus } from './lib/usage';
 import { motion, AnimatePresence } from 'motion/react';
-import { Minus, Plus, Download, Layout, Undo2, Redo2 } from 'lucide-react';
+import { Minus, Plus, Download, Layout, Undo2, Redo2, Zap, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 export default function App() {
   const [config, setConfig] = React.useState<BannerConfig>({
@@ -16,7 +17,7 @@ export default function App() {
     mode: ['cinematic'],
     prompt: '',
     textModelId: 'gemini-3-flash-preview',
-    imageModelId: 'gemini-3-pro-image-preview',
+    imageModelId: 'gemini-2.5-flash-image',
     autoBestVersion: true,
     compareMode: false,
     hybridBlend: false,
@@ -73,6 +74,30 @@ export default function App() {
       depthMapping: 75
     }
   });
+
+  const [isApiKeySelected, setIsApiKeySelected] = React.useState<boolean | null>(null);
+
+  // Check for API key selection
+  React.useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio?.hasSelectedApiKey) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setIsApiKeySelected(selected);
+      } else {
+        // Fallback for local development or if not in AI Studio environment
+        setIsApiKeySelected(true);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleOpenSelectKey = async () => {
+    if (window.aistudio?.openSelectKey) {
+      await window.aistudio.openSelectKey();
+      // Assume success and proceed to the app as per guidelines
+      setIsApiKeySelected(true);
+    }
+  };
 
   // Undo/Redo History
   const [history, setHistory] = React.useState<BannerConfig[]>([]);
@@ -169,8 +194,17 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
   const [generationHistory, setGenerationHistory] = React.useState<GenerationHistoryItem[]>([]);
+  const [apiKeyStatus, setApiKeyStatus] = React.useState<{ selected: boolean; label: string }>({ selected: false, label: 'Checking...' });
 
   // Load theme and history on mount
+  React.useEffect(() => {
+    const checkKey = async () => {
+      const status = await getApiKeyStatus();
+      setApiKeyStatus(status);
+    };
+    checkKey();
+  }, [isApiKeySelected]);
+
   React.useEffect(() => {
     const savedTheme = localStorage.getItem('app_theme') as 'dark' | 'light';
     if (savedTheme) {
@@ -318,7 +352,14 @@ export default function App() {
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Generation failed:", error);
-      alert("Generation failed. Please ensure your API key is configured correctly.");
+      
+      // Handle permission denied or missing key errors
+      if (error.message?.includes('PERMISSION_DENIED') || error.message?.includes('Requested entity was not found')) {
+        setIsApiKeySelected(false);
+        alert("Access denied. Please select a valid API key with billing enabled to use this model.");
+      } else {
+        alert("Generation failed. Please ensure your API key is configured correctly.");
+      }
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
@@ -348,6 +389,61 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-[var(--bg)] text-[var(--text-primary)] overflow-hidden selection:bg-[var(--accent)]/30 transition-colors duration-300">
+      {/* API Key Selection Overlay */}
+      <AnimatePresence>
+        {isApiKeySelected === false && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4"
+          >
+            <div className="bg-[#151619] border border-[var(--border)] rounded-2xl p-8 max-w-md w-full shadow-2xl text-center space-y-6">
+              <div className="w-16 h-16 bg-[var(--accent)]/10 rounded-full flex items-center justify-center mx-auto">
+                <Layout className="w-8 h-8 text-[var(--accent)]" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-white uppercase tracking-tighter">Premium Model Access</h2>
+                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                  To use high-quality image generation models, you must select an API key from a paid Google Cloud project.
+                </p>
+              </div>
+              
+              <div className="bg-black/40 rounded-xl p-4 border border-[var(--border)] text-left">
+                <h4 className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2">Requirements:</h4>
+                <ul className="text-[11px] text-[var(--text-primary)] space-y-2">
+                  <li className="flex items-start gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--accent)] mt-1.5" />
+                    <span>Google Cloud project with billing enabled</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--accent)] mt-1.5" />
+                    <span>Gemini API enabled in the project</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleOpenSelectKey}
+                  className="w-full py-4 bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-black rounded-xl font-bold uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]"
+                >
+                  Select API Key
+                </button>
+                <a 
+                  href="https://ai.google.dev/gemini-api/docs/billing" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors uppercase tracking-widest font-bold"
+                >
+                  View Billing Documentation
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Sidebar Overlay for Mobile */}
       <AnimatePresence>
         {!isSidebarOpen && (
@@ -422,6 +518,8 @@ export default function App() {
                   onChange={(e) => setConfig(prev => ({ ...prev, resolution: e.target.value as any }))}
                   className="bg-transparent text-[11px] font-mono font-medium text-[var(--text-primary)] focus:outline-none cursor-pointer uppercase tracking-widest"
                 >
+                  <option value="512px" className="bg-[#111]">512PX</option>
+                  <option value="720p" className="bg-[#111]">720P</option>
                   <option value="1K" className="bg-[#111]">1080P_1K</option>
                   <option value="2K" className="bg-[#111]">1440P_2K</option>
                   <option value="4K" className="bg-[#111]">2160P_4K</option>
@@ -454,19 +552,35 @@ export default function App() {
             <div className="hidden sm:flex items-center gap-3 bg-black/40 border border-[var(--border)] rounded-sm px-3 py-1">
               <button 
                 onClick={() => setZoom(prev => Math.max(0.1, prev - 0.1))}
-                className="text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+                className="p-1 hover:bg-[var(--accent)]/10 rounded-sm text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+                title="Zoom Out"
               >
-                <Minus size={12} />
+                <Minus size={14} />
               </button>
+              
+              <input 
+                type="range" 
+                min="0.1" 
+                max="2" 
+                step="0.01" 
+                value={zoom} 
+                onChange={(e) => setZoom(parseFloat(e.target.value))}
+                className="w-20 lg:w-32 h-1 bg-[var(--border)] rounded-lg appearance-none cursor-pointer accent-[var(--accent)]"
+              />
+
+              <button 
+                onClick={() => setZoom(prev => Math.min(2, prev + 0.1))}
+                className="p-1 hover:bg-[var(--accent)]/10 rounded-sm text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+                title="Zoom In"
+              >
+                <Plus size={14} />
+              </button>
+
+              <div className="w-px h-3 bg-[var(--border)] mx-1" />
+
               <span className="text-[10px] font-mono font-bold text-[var(--accent)] min-w-[40px] text-center tracking-tighter">
                 {Math.round(zoom * 100)}%
               </span>
-              <button 
-                onClick={() => setZoom(prev => Math.min(2, prev + 0.1))}
-                className="text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
-              >
-                <Plus size={12} />
-              </button>
             </div>
 
             <button 
@@ -499,6 +613,25 @@ export default function App() {
                 isRemixing={isRemixing}
                 onDownload={handleDownload}
               />
+            </div>
+
+            {/* Floating Zoom Controls */}
+            <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-[#111]/80 backdrop-blur-md border border-[var(--border)] rounded-full p-1.5 shadow-2xl lg:hidden">
+              <button 
+                onClick={() => setZoom(prev => Math.max(0.1, prev - 0.1))}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-[var(--accent)]/20 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] transition-all"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="text-[10px] font-mono font-bold text-[var(--accent)] min-w-[36px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button 
+                onClick={() => setZoom(prev => Math.min(2, prev + 0.1))}
+                className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-[var(--accent)]/20 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] transition-all"
+              >
+                <Plus size={14} />
+              </button>
             </div>
           </div>
 
@@ -542,6 +675,39 @@ export default function App() {
         {/* Ambient Glows */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-[var(--accent)]/5 blur-[120px] pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[var(--accent)]/5 blur-[120px] pointer-events-none" />
+
+        {/* Floating Usage Indicator */}
+        <div className="fixed bottom-6 left-6 z-[60] hidden lg:block">
+          <motion.div 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="flex items-center gap-4 bg-[#111]/80 backdrop-blur-xl border border-[var(--border)] rounded-2xl p-3 pr-5 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 border-r border-[var(--border)] pr-4">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${apiKeyStatus.selected ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                {apiKeyStatus.selected ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-bold text-[var(--text-secondary)] uppercase tracking-[0.2em] leading-none mb-1">API_Status</span>
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${apiKeyStatus.selected ? 'text-green-500' : 'text-red-500'}`}>
+                  {apiKeyStatus.label}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center">
+                <Zap size={16} className="animate-pulse" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-bold text-[var(--text-secondary)] uppercase tracking-[0.2em] leading-none mb-1">Est_Credits</span>
+                <span className="text-[11px] font-mono font-bold text-[var(--accent)]">
+                  {calculateCredits(config)} <span className="text-[8px] text-[var(--text-secondary)] ml-1">PTS</span>
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        </div>
       </main>
       {/* Background Ambient Glow */}
       <div className="fixed inset-0 pointer-events-none z-[-1]">
