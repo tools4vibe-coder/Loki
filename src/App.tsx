@@ -6,7 +6,7 @@ import { BannerConfig, BannerOption, GenerationHistoryItem } from './types';
 import { AIService } from './services/aiService';
 import { calculateCredits, getApiKeyStatus } from './lib/usage';
 import { motion, AnimatePresence } from 'motion/react';
-import { Minus, Plus, Download, Layout, Undo2, Redo2, Zap, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Minus, Plus, Download, Layout, Undo2, Redo2, Zap, ShieldCheck, ShieldAlert, Hand, MousePointer2, Maximize2, RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [config, setConfig] = React.useState<BannerConfig>({
@@ -196,6 +196,101 @@ export default function App() {
   const [generationHistory, setGenerationHistory] = React.useState<GenerationHistoryItem[]>([]);
   const [apiKeyStatus, setApiKeyStatus] = React.useState<{ selected: boolean; label: string }>({ selected: false, label: 'Checking...' });
 
+  // Panning & Tools
+  const [activeTool, setActiveTool] = React.useState<'select' | 'hand'>('select');
+  const [panOffset, setPanOffset] = React.useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = React.useState(false);
+  const lastMousePos = React.useRef({ x: 0, y: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (activeTool === 'hand' || e.button === 1) { // Middle click or hand tool
+      setIsPanning(true);
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      const dx = e.clientX - lastMousePos.current.x;
+      const dy = e.clientY - lastMousePos.current.y;
+      setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.altKey) {
+      // Zooming
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoom(prev => Math.min(Math.max(0.1, prev + delta), 5));
+    } else {
+      // Panning (Scrolling)
+      // If Shift is held, pan horizontally, otherwise vertically
+      if (e.shiftKey) {
+        setPanOffset(prev => ({ ...prev, x: prev.x - e.deltaY }));
+      } else {
+        setPanOffset(prev => ({ ...prev, y: prev.y - e.deltaY }));
+      }
+    }
+  };
+
+  const resetView = () => {
+    setPanOffset({ x: 0, y: 0 });
+    setZoom(1);
+  };
+
+  const fitToScreen = () => {
+    const stage = document.querySelector('.stage-bg');
+    if (!stage) return;
+    
+    const stageWidth = stage.clientWidth;
+    const stageHeight = stage.clientHeight;
+    
+    // Calculate banner size based on folds
+    const bannerWidth = config.folds * 300;
+    const bannerHeight = 533; // Standard height in preview
+
+    const padding = 60;
+    const scaleX = (stageWidth - padding) / bannerWidth;
+    const scaleY = (stageHeight - padding) / bannerHeight;
+    
+    const newZoom = Math.min(scaleX, scaleY, 1.5); // Max 150% zoom
+    
+    setZoom(newZoom);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  // Keyboard Shortcuts for Tools
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if (e.key.toLowerCase() === 'h') setActiveTool('hand');
+      if (e.key.toLowerCase() === 'v') setActiveTool('select');
+      if (e.key === ' ' && !isPanning) {
+        e.preventDefault();
+        setActiveTool('hand');
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ') {
+        setActiveTool('select');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isPanning]);
+
   // Load theme and history on mount
   React.useEffect(() => {
     const checkKey = async () => {
@@ -234,30 +329,79 @@ export default function App() {
     localStorage.setItem('app_theme', newTheme);
   };
 
-  const handleDownload = () => {
+  const handleDownloadFold = async (index: number) => {
     if (!selectedOption) return;
-    
-    selectedOption.folds.forEach((fold, index) => {
+    const fold = selectedOption.folds[index];
+    if (!fold) return;
+
+    try {
+      if (fold.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.href = fold;
+        link.download = `${config.projectName.replace(/\s+/g, '_')}_fold_${index + 1}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const response = await fetch(fold);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${config.projectName.replace(/\s+/g, '_')}_fold_${index + 1}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+      }
+    } catch (e) {
+      console.error("Download failed for fold", index, e);
+      // Instead of window.open, try a hidden iframe or just alert the user
+      // But blob should work for most cases if CORS is okay.
+      // If CORS is not okay, we might need a proxy.
       const link = document.createElement('a');
       link.href = fold;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       link.download = `${config.projectName.replace(/\s+/g, '_')}_fold_${index + 1}.png`;
-      document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
-    });
+    }
   };
 
-  // Load saved projects on mount
+  const handleDownload = async () => {
+    if (!selectedOption) return;
+    for (let index = 0; index < selectedOption.folds.length; index++) {
+      await handleDownloadFold(index);
+    }
+  };
+
+  // Load saved projects and history on mount
   React.useEffect(() => {
-    const saved = localStorage.getItem('banner_projects');
-    if (saved) {
+    const savedProjectsData = localStorage.getItem('banner_projects');
+    if (savedProjectsData) {
       try {
-        setSavedProjects(JSON.parse(saved));
+        setSavedProjects(JSON.parse(savedProjectsData));
       } catch (e) {
         console.error('Failed to parse saved projects', e);
       }
     }
+
+    const savedHistoryData = localStorage.getItem('banner_history');
+    if (savedHistoryData) {
+      try {
+        setGenerationHistory(JSON.parse(savedHistoryData));
+      } catch (e) {
+        console.error('Failed to parse history', e);
+      }
+    }
   }, []);
+
+  // Save history when it changes
+  React.useEffect(() => {
+    if (generationHistory.length > 0) {
+      localStorage.setItem('banner_history', JSON.stringify(generationHistory));
+    }
+  }, [generationHistory]);
 
   // Auto-save effect
   React.useEffect(() => {
@@ -304,6 +448,15 @@ export default function App() {
     localStorage.setItem('banner_projects', JSON.stringify(updated));
   };
 
+  const saveProject = () => {
+    const updatedProjects = {
+      ...savedProjects,
+      [config.projectName]: config
+    };
+    setSavedProjects(updatedProjects);
+    localStorage.setItem('banner_projects', JSON.stringify(updatedProjects));
+  };
+
   const loadHistoryItem = (item: GenerationHistoryItem) => {
     setConfig(item.config);
     setOptions(item.options);
@@ -313,6 +466,11 @@ export default function App() {
 
   const deleteHistoryItem = (id: string) => {
     setGenerationHistory(prev => prev.filter(item => item.id !== id));
+  };
+
+  const clearHistory = () => {
+    setGenerationHistory([]);
+    localStorage.removeItem('banner_history');
   };
 
   const abortControllerRef = React.useRef<AbortController | null>(null);
@@ -347,18 +505,35 @@ export default function App() {
           options: results,
           selectedOptionId: firstOption.id
         };
-        setGenerationHistory(prev => [historyItem, ...prev].slice(0, 20)); // Keep last 20 generations
+        setGenerationHistory(prev => [historyItem, ...prev]);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Generation failed:", error);
       
-      // Handle permission denied or missing key errors
-      if (error.message?.includes('PERMISSION_DENIED') || error.message?.includes('Requested entity was not found')) {
-        setIsApiKeySelected(false);
-        alert("Access denied. Please select a valid API key with billing enabled to use this model.");
+      const errorMessage = error.message || error.error?.message || "";
+      const errorStatus = error.status || error.error?.status || "";
+      const errorCode = error.code || error.error?.code || 0;
+
+      if (errorMessage.includes('PERMISSION_DENIED') || 
+          errorMessage.includes('403') ||
+          errorStatus === 'PERMISSION_DENIED' ||
+          errorCode === 403) {
+        
+        const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+        const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+        const isVertexKey = apiKey?.startsWith('AQ.');
+
+        if (isVertexKey && !projectId) {
+          alert("403 Permission Denied: You are using a Vertex AI key but VITE_PROJECT_ID is not set. Please add VITE_PROJECT_ID to your environment variables in the Settings menu.");
+        } else if (projectId) {
+          alert(`403 Permission Denied: Using Vertex AI (Project: ${projectId}). Please ensure the 'Vertex AI API' is enabled in your Google Cloud Console and your API key has the necessary permissions.`);
+        } else {
+          setIsApiKeySelected(false);
+          alert("Access denied. Please select a valid API key with billing enabled to use this model.");
+        }
       } else {
-        alert("Generation failed. Please ensure your API key is configured correctly.");
+        alert(`Generation failed: ${errorMessage || "Please ensure your API key is configured correctly."}`);
       }
     } finally {
       setIsGenerating(false);
@@ -475,10 +650,12 @@ export default function App() {
           savedProjects={savedProjects}
           onLoadProject={loadProject}
           onDeleteProject={deleteProject}
+          onSaveProject={saveProject}
           onProjectNameChange={handleProjectNameChange}
           generationHistory={generationHistory}
           onLoadHistoryItem={loadHistoryItem}
           onDeleteHistoryItem={deleteHistoryItem}
+          onClearHistory={clearHistory}
           onClose={() => setIsSidebarOpen(false)}
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -531,6 +708,23 @@ export default function App() {
           <div className="flex items-center gap-2 lg:gap-6">
             <div className="hidden sm:flex items-center gap-1 bg-black/40 border border-[var(--border)] rounded-sm p-1">
               <button 
+                onClick={() => setActiveTool('select')}
+                className={`p-1.5 rounded-sm transition-all ${activeTool === 'select' ? 'bg-[var(--accent)] text-black' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                title="Select Tool (V)"
+              >
+                <MousePointer2 size={14} />
+              </button>
+              <button 
+                onClick={() => setActiveTool('hand')}
+                className={`p-1.5 rounded-sm transition-all ${activeTool === 'hand' ? 'bg-[var(--accent)] text-black' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                title="Hand Tool (H / Space)"
+              >
+                <Hand size={14} />
+              </button>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-1 bg-black/40 border border-[var(--border)] rounded-sm p-1">
+              <button 
                 onClick={undo}
                 disabled={historyIndex <= 0}
                 title="Undo (Ctrl+Z)"
@@ -581,6 +775,24 @@ export default function App() {
               <span className="text-[10px] font-mono font-bold text-[var(--accent)] min-w-[40px] text-center tracking-tighter">
                 {Math.round(zoom * 100)}%
               </span>
+
+              <div className="w-px h-3 bg-[var(--border)] mx-1" />
+
+              <button 
+                onClick={fitToScreen}
+                className="p-1.5 hover:bg-[var(--accent)]/10 rounded-sm text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+                title="Fit to Screen"
+              >
+                <Maximize2 size={14} />
+              </button>
+
+              <button 
+                onClick={resetView}
+                className="p-1.5 hover:bg-[var(--accent)]/10 rounded-sm text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+                title="Reset View"
+              >
+                <RefreshCw size={14} />
+              </button>
             </div>
 
             <button 
@@ -596,14 +808,25 @@ export default function App() {
 
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
           {/* Stage Area */}
-          <div className="flex-1 overflow-auto relative stage-bg p-4 lg:p-12 flex items-center justify-center bg-[var(--bg)]">
+          <div 
+            className={`flex-1 overflow-hidden relative stage-bg p-4 lg:p-12 flex items-center justify-center bg-[var(--bg)] ${activeTool === 'hand' ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onDoubleClick={resetView}
+            onWheel={handleWheel}
+          >
             {/* Grid Pattern Background */}
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
                  style={{ backgroundImage: 'radial-gradient(var(--text-primary) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
             
             <div 
-              style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-              className="transition-transform duration-300 ease-out z-10"
+              style={{ 
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`, 
+                transformOrigin: 'center center' 
+              }}
+              className={`z-10 ${isPanning ? '' : 'transition-transform duration-300 ease-out'}`}
             >
               <BannerPreview 
                 config={config} 
@@ -612,6 +835,7 @@ export default function App() {
                 onRemixFold={handleRemixFold}
                 isRemixing={isRemixing}
                 onDownload={handleDownload}
+                onDownloadFold={handleDownloadFold}
               />
             </div>
 

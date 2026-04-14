@@ -10,6 +10,7 @@ interface BannerPreviewProps {
   isRemixing?: number | null;
   onRemixFold?: (index: number) => void;
   onDownload?: () => void;
+  onDownloadFold?: (index: number) => void;
 }
 
 export const BannerPreview: React.FC<BannerPreviewProps> = ({ 
@@ -18,7 +19,8 @@ export const BannerPreview: React.FC<BannerPreviewProps> = ({
   isLoading,
   isRemixing,
   onRemixFold,
-  onDownload
+  onDownload,
+  onDownloadFold
 }) => {
   const [viewMode, setViewMode] = React.useState<'full' | 'folds'>('folds');
   const [showOverlays, setShowOverlays] = React.useState(true);
@@ -245,12 +247,7 @@ export const BannerPreview: React.FC<BannerPreviewProps> = ({
                         )}
                       </button>
                       <button 
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = fold;
-                          link.download = `fold_${i + 1}.png`;
-                          link.click();
-                        }}
+                        onClick={() => onDownloadFold?.(i)}
                         className="bg-[#1a1a1a] p-2 rounded border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
                         title="Download segment"
                       >

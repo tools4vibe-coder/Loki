@@ -24,6 +24,14 @@ export const IMAGE_MODELS: AIModel[] = [
   
   // Ideogram
   { id: 'ideogram-v2', name: 'Ideogram v2', provider: 'ideogram', version: 'v2', capabilities: ['typography', 'design'] },
+
+  // Adobe Firefly
+  { id: 'firefly-v3', name: 'Adobe Firefly Image 3', provider: 'firefly', version: 'v3', capabilities: ['photorealistic', 'design'] },
+  { id: 'firefly-v2', name: 'Adobe Firefly Image 2', provider: 'firefly', version: 'v2', capabilities: ['versatile', 'fast'] },
+
+  // Leonardo.ai
+  { id: 'leonardo-phoenix', name: 'Leonardo Phoenix', provider: 'leonardo', version: 'v1', capabilities: ['high-res', 'artistic'] },
+  { id: 'leonardo-xl', name: 'Leonardo XL', provider: 'leonardo', version: 'v1', capabilities: ['fast', 'efficient'] },
 ];
 
 export const MODELS: AIModel[] = [...TEXT_MODELS, ...IMAGE_MODELS];

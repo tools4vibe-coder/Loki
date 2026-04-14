@@ -16,7 +16,9 @@ export type ModelProvider =
   | 'runway' 
   | 'grok' 
   | 'seedream' 
-  | 'mystic';
+  | 'mystic'
+  | 'firefly'
+  | 'leonardo';
 
 export interface AIModel {
   id: string;

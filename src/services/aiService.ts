@@ -16,6 +16,29 @@ export class AIService {
   private getGeminiAI() {
     // Use the user-selected API key if available, otherwise fall back to the environment key
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    
+    // Vertex AI configuration (Google Cloud)
+    const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+    const location = (import.meta as any).env.VITE_LOCATION || 'us-central1';
+
+    // Heuristic: Vertex AI keys often start with 'AQ.'
+    const isVertexKey = apiKey?.startsWith('AQ.');
+
+    if (projectId) {
+      // Initialize for Vertex AI
+      console.log(`Initializing AI Service with Vertex AI (Project: ${projectId}, Location: ${location})`);
+      return new GoogleGenAI({ 
+        project: projectId, 
+        location,
+        apiKey: apiKey
+      });
+    }
+
+    if (isVertexKey && !projectId) {
+      console.warn("Vertex AI key detected but VITE_PROJECT_ID is missing. Falling back to Google AI (Gemini API), which may cause 403 errors.");
+    }
+
+    // Fallback to Google AI (Gemini API)
     if (!apiKey) throw new Error("API Key is not configured. Please select an API key in the settings.");
     return new GoogleGenAI({ apiKey });
   }
@@ -74,6 +97,7 @@ export class AIService {
   }
 
   private async generateWithGemini(config: BannerConfig, signal?: AbortSignal): Promise<BannerOption[]> {
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     const ai = this.getGeminiAI();
     const modelId = config.imageModelId;
     
@@ -204,9 +228,38 @@ export class AIService {
 
           if (base64Data) {
             foldImages.push(`data:image/png;base64,${base64Data}`);
+          } else {
+            throw new Error("No image data received from API");
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Error generating variation ${i} fold ${f}`, error);
+          // Re-throw critical errors so the UI can handle them (e.g., API key issues)
+          const errorMessage = error?.message || error?.error?.message || "";
+          const errorStatus = error?.status || error?.error?.status || "";
+          const errorCode = error?.code || error?.error?.code || 0;
+          
+          const isCritical = errorMessage.includes('PERMISSION_DENIED') || 
+                            errorMessage.includes('403') ||
+                            errorMessage.includes('API_KEY_INVALID') ||
+                            errorMessage.includes('not found') ||
+                            errorStatus === 'PERMISSION_DENIED' ||
+                            errorCode === 403;
+          
+          if (isCritical) {
+            const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+            const isVertexKey = apiKey?.startsWith('AQ.');
+            
+            if (isVertexKey && !projectId) {
+              throw new Error("403 Permission Denied: Vertex AI key detected but VITE_PROJECT_ID is missing. Please set VITE_PROJECT_ID in your environment variables.");
+            }
+            
+            if (projectId) {
+              throw new Error(`403 Permission Denied: Using Vertex AI (Project: ${projectId}). Ensure the 'Vertex AI API' is enabled in your Google Cloud Console and your API key has the necessary permissions.`);
+            }
+            
+            throw error;
+          }
+          // For non-critical errors, we might want to continue or show a placeholder
         }
       }
 
@@ -333,17 +386,32 @@ export class AIService {
 
   private async proxyGeneration(config: BannerConfig): Promise<BannerOption[]> {
     // Placeholder for server-side proxy
-    const response = await fetch(`/api/generate/${config.imageModelId.split('-')[0]}`, {
+    const modelPrefix = config.imageModelId.split('-')[0];
+    const response = await fetch(`/api/generate/${modelPrefix}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)
     });
     
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || "Generation failed");
+    let data: any;
+    const text = await response.text();
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse response as JSON", text);
+        throw new Error(`Invalid response from server: ${text.substring(0, 100)}`);
+      }
     }
     
-    return response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || `Generation failed with status ${response.status}`);
+    }
+    
+    if (!data) {
+      throw new Error("Empty response from generation server");
+    }
+    
+    return data;
   }
 }

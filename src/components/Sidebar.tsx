@@ -62,10 +62,12 @@ interface SidebarProps {
   savedProjects: Record<string, BannerConfig>;
   onLoadProject: (name: string) => void;
   onDeleteProject: (name: string) => void;
+  onSaveProject: () => void;
   onProjectNameChange: (name: string) => void;
   generationHistory: GenerationHistoryItem[];
   onLoadHistoryItem: (item: GenerationHistoryItem) => void;
   onDeleteHistoryItem: (id: string) => void;
+  onClearHistory: () => void;
   onClose?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -380,16 +382,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   savedProjects,
   onLoadProject,
   onDeleteProject,
+  onSaveProject,
   onProjectNameChange,
   generationHistory,
   onLoadHistoryItem,
   onDeleteHistoryItem,
+  onClearHistory,
   onClose,
   theme,
   onToggleTheme
 }) => {
   const [activeTab, setActiveTab] = React.useState<'model' | 'layout' | 'assets' | 'typography' | 'layers' | 'history' | 'settings' | 'check'>('model');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const tabsRef = React.useRef<HTMLDivElement>(null);
+  const [isDraggingTabs, setIsDraggingTabs] = React.useState(false);
+  const [startX, setStartX] = React.useState(0);
+  const [scrollLeft, setScrollLeft] = React.useState(0);
   const [uploadType, setUploadType] = React.useState<'product' | 'style' | 'image' | null>(null);
   const [draggingType, setDraggingType] = React.useState<'product' | 'style' | 'image' | null>(null);
   const [isDescribing, setIsDescribing] = React.useState(false);
@@ -510,6 +518,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? config.brandPresets.find(b => b.id === config.activeBrandId)?.colors 
     : [];
 
+  const handleTabsMouseDown = (e: React.MouseEvent) => {
+    if (!tabsRef.current) return;
+    setIsDraggingTabs(true);
+    setStartX(e.pageX - tabsRef.current.offsetLeft);
+    setScrollLeft(tabsRef.current.scrollLeft);
+  };
+
+  const handleTabsMouseLeave = () => {
+    setIsDraggingTabs(false);
+  };
+
+  const handleTabsMouseUp = () => {
+    setIsDraggingTabs(false);
+  };
+
+  const handleTabsMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingTabs || !tabsRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tabsRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5; // Scroll speed
+    tabsRef.current.scrollLeft = scrollLeft - walk;
+  };
+
   return (
     <div className="w-80 h-full border-r border-[var(--border)] flex flex-col bg-[var(--card-bg)] transition-colors duration-300">
       <input 
@@ -521,11 +552,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
       {/* Header */}
       <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-display uppercase tracking-tighter leading-none text-[var(--text-primary)]">
-            Seamora <span className="text-[var(--accent)]">AI</span>
-          </h1>
-          <p className="text-[10px] font-mono text-[var(--text-secondary)] mt-1 uppercase tracking-widest">Brand Design Engine v5.0</p>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 group cursor-default">
+            <div className="relative">
+              <div className="absolute inset-0 bg-[var(--accent)] blur-md opacity-20 group-hover:opacity-40 transition-opacity" />
+              <div className="relative w-8 h-8 bg-gradient-to-br from-[var(--accent)] to-[#60a5fa] rounded-lg flex items-center justify-center shadow-[0_0_15px_var(--accent-glow)]">
+                <Sparkles size={18} className="text-black fill-current" />
+              </div>
+            </div>
+            <h1 className="text-xl font-display uppercase tracking-[-0.05em] leading-none text-[var(--text-primary)]">
+              SEAMORA<span className="text-[var(--accent)]">.AI</span>
+            </h1>
+          </div>
+          <p className="text-[8px] font-mono text-[var(--text-secondary)] mt-2 uppercase tracking-[0.3em] opacity-60">Brand Design Engine v5.0</p>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -548,7 +587,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Tabs */}
       <div className="relative border-b border-[var(--border)] bg-[var(--card-bg)]/40 backdrop-blur-md sticky top-0 z-20">
-        <div className="flex items-center gap-1.5 px-3 py-2.5 overflow-x-auto no-scrollbar snap-x scroll-smooth">
+        <div 
+          ref={tabsRef}
+          onMouseDown={handleTabsMouseDown}
+          onMouseLeave={handleTabsMouseLeave}
+          onMouseUp={handleTabsMouseUp}
+          onMouseMove={handleTabsMouseMove}
+          className={`flex items-center gap-1.5 px-3 py-2.5 overflow-x-auto scroll-smooth custom-scrollbar-h ${isDraggingTabs ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+        >
           {[
             { id: 'model', icon: Sparkles, label: 'AI' },
             { id: 'layout', icon: Layout, label: 'Layout' },
@@ -562,7 +608,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 min-w-[64px] py-2 rounded-xl transition-all duration-300 snap-center relative group ${
+              className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 min-w-[64px] py-2 rounded-xl transition-all duration-300 relative group ${
                 activeTab === tab.id 
                   ? 'text-[var(--accent)]' 
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -1257,6 +1303,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Layers className="w-3 h-3" /> Layer Stack
                 </label>
                 <div className="flex items-center gap-2">
+                  {config.textLayers.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        if (confirm('Are you sure you want to clear all text layers?')) {
+                          setConfig(prev => ({ ...prev, textLayers: [] }));
+                        }
+                      }}
+                      className="text-[9px] font-bold text-red-400/60 hover:text-red-400 uppercase tracking-widest transition-colors mr-2"
+                    >
+                      Clear All
+                    </button>
+                  )}
                   <button className="p-1.5 hover:bg-[var(--accent)]/10 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                     <Eye size={14} />
                   </button>
@@ -1270,7 +1328,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {config.textLayers.map((layer) => (
                   <div 
                     key={layer.id}
-                    onClick={() => updateConfig({ editingLayerId: layer.id })}
+                    onClick={() => {
+                      updateConfig({ editingLayerId: layer.id });
+                      setActiveTab('typography');
+                    }}
                     className={`group flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                       config.editingLayerId === layer.id 
                         ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30' 
@@ -1423,9 +1484,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {activeTab === 'history' && (
           <div className="space-y-6">
             <section className="space-y-4">
-              <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
-                <History className="w-3 h-3" /> Generation History
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest flex items-center gap-2">
+                  <History className="w-3 h-3" /> Generation History
+                </label>
+                {generationHistory.length > 0 && (
+                  <button 
+                    onClick={() => {
+                      if (confirm('Are you sure you want to clear all generation history?')) {
+                        onClearHistory();
+                      }
+                    }}
+                    className="text-[9px] font-bold text-red-400/60 hover:text-red-400 uppercase tracking-widest transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
               <div className="space-y-3">
                 {generationHistory.length > 0 ? (
                   generationHistory.map((item) => (
@@ -1492,15 +1567,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </label>
               
               <div className="bg-[var(--card-bg)]/50 border border-[var(--border)] rounded-2xl p-4 space-y-4">
-                <div className="space-y-2">
-                  <label className="text-[9px] font-bold text-[var(--text-secondary)]/60 uppercase">Project Name</label>
-                  <input 
-                    type="text"
-                    value={config.projectName}
-                    onChange={(e) => onProjectNameChange(e.target.value)}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
-                    placeholder="Enter project name..."
-                  />
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-[var(--text-secondary)]/60 uppercase">Project Name</label>
+                    <input 
+                      type="text"
+                      value={config.projectName}
+                      onChange={(e) => onProjectNameChange(e.target.value)}
+                      className="w-full bg-[var(--input-bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]/50 text-[var(--text-primary)]"
+                      placeholder="Enter project name..."
+                    />
+                  </div>
+                  <button 
+                    onClick={onSaveProject}
+                    className="w-full py-2.5 bg-[var(--accent)] text-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-widest shadow-[0_0_15px_var(--accent-glow)] group"
+                  >
+                    <Save size={14} className="group-hover:scale-110 transition-transform" />
+                    Save Project
+                  </button>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-[var(--bg)]/40 rounded-xl border border-[var(--border)]">
