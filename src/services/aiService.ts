@@ -17,30 +17,27 @@ export class AIService {
     // Use the user-selected API key if available, otherwise fall back to the environment key
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     
-    // Vertex AI configuration (Google Cloud)
-    const projectId = (import.meta as any).env.VITE_PROJECT_ID;
-    const location = (import.meta as any).env.VITE_LOCATION || 'us-central1';
-
-    // Heuristic: Vertex AI keys often start with 'AQ.'
-    const isVertexKey = apiKey?.startsWith('AQ.');
-
-    if (projectId) {
-      // Initialize for Vertex AI
-      console.log(`Initializing AI Service with Vertex AI (Project: ${projectId}, Location: ${location})`);
-      return new GoogleGenAI({ 
-        project: projectId, 
-        location,
-        apiKey: apiKey
-      });
-    }
-
-    if (isVertexKey && !projectId) {
-      console.warn("Vertex AI key detected but VITE_PROJECT_ID is missing. Falling back to Google AI (Gemini API), which may cause 403 errors.");
-    }
-
     // Fallback to Google AI (Gemini API)
     if (!apiKey) throw new Error("API Key is not configured. Please select an API key in the settings.");
+    
+    // We only initialize the client in the browser for standard Google AI (no project/location)
+    // Vertex AI requests will be routed through the server-side proxy
     return new GoogleGenAI({ apiKey });
+  }
+
+  private async generateWithServerSideGemini(modelId: string, parts: any[], config?: any): Promise<any> {
+    const response = await fetch('/api/generate/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelId, parts, config })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Server-side generation failed with status ${response.status}`);
+    }
+
+    return response.json();
   }
 
   private async withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initialDelay: number = 2000): Promise<T> {
@@ -78,27 +75,32 @@ export class AIService {
   }
 
   public async describeImage(imageBase64: string, textModelId: string): Promise<string> {
+    const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+    const parts = [
+      {
+        inlineData: {
+          data: imageBase64.split(',')[1],
+          mimeType: "image/png"
+        }
+      },
+      { text: "Describe this image in detail for an AI image generation prompt. Focus on composition, lighting, style, and key visual elements." }
+    ];
+
+    if (projectId) {
+      const response = await this.generateWithServerSideGemini(textModelId, parts);
+      return response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
     const ai = this.getGeminiAI();
     const response = await ai.models.generateContent({
       model: textModelId,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: imageBase64.split(',')[1],
-              mimeType: "image/png"
-            }
-          },
-          { text: "Describe this image in detail for an AI image generation prompt. Focus on composition, lighting, style, and key visual elements." }
-        ]
-      }
+      contents: { parts }
     });
     return response.text || "";
   }
 
   private async generateWithGemini(config: BannerConfig, signal?: AbortSignal): Promise<BannerOption[]> {
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-    const ai = this.getGeminiAI();
     const modelId = config.imageModelId;
     
     // Brand Preset Integration
@@ -207,16 +209,29 @@ export class AIService {
           // Add a small staggered delay to avoid overwhelming the API
           await new Promise(resolve => setTimeout(resolve, (i * config.folds + f) * 500));
 
-          const response = await this.withRetry(() => ai.models.generateContent({
-            model: modelId,
-            contents: { parts },
-            config: {
+          const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+          let response;
+
+          if (projectId) {
+            response = await this.withRetry(() => this.generateWithServerSideGemini(modelId, parts, {
               imageConfig: {
-                aspectRatio: "16:9", // Standard for individual folds
+                aspectRatio: "16:9",
                 imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
               }
-            }
-          }));
+            }));
+          } else {
+            const ai = this.getGeminiAI();
+            response = await this.withRetry(() => ai.models.generateContent({
+              model: modelId,
+              contents: { parts },
+              config: {
+                imageConfig: {
+                  aspectRatio: "16:9", // Standard for individual folds
+                  imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
+                }
+              }
+            }));
+          }
 
           let base64Data = "";
           for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -281,7 +296,6 @@ export class AIService {
   }
 
   public async remixFold(config: BannerConfig, originalOption: BannerOption, foldIndex: number): Promise<string> {
-    const ai = this.getGeminiAI();
     const modelId = config.imageModelId;
     
     const activeBrand = config.brandPresets.find(b => b.id === config.activeBrandId);
@@ -358,16 +372,29 @@ export class AIService {
     else foldAspectRatio = "8:1";
 
     try {
-      const response = await this.withRetry(() => ai.models.generateContent({
-        model: modelId,
-        contents: { parts },
-        config: {
+      const projectId = (import.meta as any).env.VITE_PROJECT_ID;
+      let response;
+
+      if (projectId) {
+        response = await this.withRetry(() => this.generateWithServerSideGemini(modelId, parts, {
           imageConfig: {
             aspectRatio: foldAspectRatio,
             imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
           }
-        }
-      }));
+        }));
+      } else {
+        const ai = this.getGeminiAI();
+        response = await this.withRetry(() => ai.models.generateContent({
+          model: modelId,
+          contents: { parts },
+          config: {
+            imageConfig: {
+              aspectRatio: foldAspectRatio,
+              imageSize: config.resolution === '4K' ? '4K' : config.resolution === '2K' ? '2K' : config.resolution === '720p' ? '1K' : config.resolution === '512px' ? '512px' : '1K'
+            }
+          }
+        }));
+      }
 
       let base64Data = "";
       for (const part of response.candidates?.[0]?.content?.parts || []) {

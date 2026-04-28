@@ -560,8 +560,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Sparkles size={18} className="text-black fill-current" />
               </div>
             </div>
-            <h1 className="text-xl font-display uppercase tracking-[-0.05em] leading-none text-[var(--text-primary)]">
-              SEAMORA<span className="text-[var(--accent)]">.AI</span>
+            <h1 className="text-[20px] font-['Verdana'] not-italic font-normal bg-black uppercase tracking-[-0.05em] leading-none text-[var(--text-primary)]">
+              SEAMORA<span className="text-[var(--accent)] font-bold">.AI</span>
             </h1>
           </div>
           <p className="text-[8px] font-mono text-[var(--text-secondary)] mt-2 uppercase tracking-[0.3em] opacity-60">Brand Design Engine v5.0</p>
@@ -623,7 +623,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   activeTab === tab.id ? 'scale-110' : 'group-hover:scale-110'
                 }`} 
               />
-              <span className="relative z-10 text-[9px] font-bold uppercase tracking-[0.1em] leading-none">
+              <span className="relative z-10 text-[12px] font-sans font-bold uppercase tracking-[0.1em] leading-[15px]">
                 {tab.label}
               </span>
               {activeTab === tab.id && (

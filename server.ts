@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +12,54 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
+
+  // API routes for Gemini/Vertex AI (Server-side to avoid browser restrictions)
+  app.post("/api/generate/gemini", async (req, res) => {
+    const { config, parts, modelId } = req.body;
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const projectId = process.env.VITE_PROJECT_ID || process.env.PROJECT_ID;
+    const location = process.env.VITE_LOCATION || process.env.LOCATION || 'us-central1';
+
+    if (!apiKey) {
+      return res.status(400).json({ error: "API Key is not configured on the server." });
+    }
+
+    try {
+      let genAI;
+      if (projectId) {
+        console.log(`Server: Initializing Vertex AI (Project: ${projectId}, Location: ${location})`);
+        genAI = new GoogleGenAI({
+          project: projectId,
+          location,
+          apiKey
+        });
+      } else {
+        genAI = new GoogleGenAI({ apiKey });
+      }
+
+      const model = genAI.getGenerativeModel({ model: modelId });
+      
+      // Handle image generation or content generation based on model
+      // Note: The SDK interface might differ slightly between Google AI and Vertex AI for some features,
+      // but generateContent is standard.
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          // Add any specific generation config if needed
+          ...config?.generationConfig
+        }
+      });
+
+      const response = await result.response;
+      res.json(response);
+    } catch (error: any) {
+      console.error("Server-side Generation Error:", error);
+      res.status(error.status || 500).json({ 
+        error: error.message || "Internal Server Error during generation",
+        details: error.error || error
+      });
+    }
+  });
 
   // API routes for other models (Proxying)
   app.post("/api/generate/openai", async (req, res) => {
@@ -29,6 +78,39 @@ async function startServer() {
 
   app.post("/api/generate/ideogram", async (req, res) => {
     res.status(501).json({ error: "Ideogram integration requires API key configuration." });
+  });
+
+  app.post("/api/generate/banana", async (req, res) => {
+    const config = req.body;
+    
+    // Simulation Mode for Banana Models
+    try {
+      const folds = config.folds || 3;
+      const promptSeed = encodeURIComponent(config.prompt.substring(0, 20));
+      
+      const options = Array.from({ length: 4 }).map((_, i) => {
+        const id = Math.random().toString(36).substr(2, 9);
+        const foldImages = Array.from({ length: folds }).map((_, f) => 
+          `https://picsum.photos/seed/banana-${promptSeed}-${i}-${f}/1024/1024`
+        );
+
+        return {
+          id,
+          fullImage: foldImages[0],
+          folds: foldImages,
+          metadata: {
+            model: config.imageModelId,
+            layout: 'Banana Multi-Fold',
+            lighting: config.lighting || 'Vibrant'
+          }
+        };
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      res.json(options);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to simulate Banana generation" });
+    }
   });
 
   app.post("/api/generate/seedream", async (req, res) => {

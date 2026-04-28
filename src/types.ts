@@ -18,7 +18,8 @@ export type ModelProvider =
   | 'seedream' 
   | 'mystic'
   | 'firefly'
-  | 'leonardo';
+  | 'leonardo'
+  | 'banana';
 
 export interface AIModel {
   id: string;

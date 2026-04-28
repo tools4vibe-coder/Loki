@@ -3,6 +3,7 @@ import { AIModel } from "./types";
 export const TEXT_MODELS: AIModel[] = [
   { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (High Reasoning)', provider: 'google', version: 'Latest', capabilities: ['reasoning', 'detail'] },
   { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Fast)', provider: 'google', version: 'Latest', capabilities: ['low-latency', 'fast'] },
+  { id: 'gemini-nano', name: 'Gemini Nano (On-Device)', provider: 'google', version: 'v1', capabilities: ['privacy', 'fast', 'local'] },
 ];
 
 export const IMAGE_MODELS: AIModel[] = [
@@ -11,6 +12,16 @@ export const IMAGE_MODELS: AIModel[] = [
   { id: 'gemini-3.1-flash-image-preview', name: 'Gemini 3.1 Flash Image (High-Quality)', provider: 'google', version: '3.1', capabilities: ['high-res', 'detail', 'free'] },
   { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image (Ultra-Res)', provider: 'google', version: '3.0', capabilities: ['1K/2K/4K', 'pro'] },
   
+  // Banana Models
+  { id: 'banana-v1', name: 'Banana Image v1', provider: 'banana', version: 'v1', capabilities: ['creative', 'fast'] },
+  { id: 'banana-v2-turbo', name: 'Banana v2 Turbo', provider: 'banana', version: 'v2', capabilities: ['ultra-fast', 'vibrant'] },
+  { id: 'banana-nano', name: 'Google Nano Banana', provider: 'banana', version: 'v1', capabilities: ['efficient', 'nano'] },
+  { id: 'banana-nano-pro', name: 'Google Nano Banana Pro', provider: 'banana', version: 'v1-pro', capabilities: ['high-res', 'nano-pro'] },
+  { id: 'banana-nano-2', name: 'Google Nano Banana 2', provider: 'banana', version: 'v2', capabilities: ['next-gen', 'nano-2'] },
+  { id: 'banana-nano', name: 'Google Nano Banana', provider: 'banana', version: 'v1', capabilities: ['efficient', 'nano'] },
+  { id: 'banana-nano-pro', name: 'Google Nano Banana Pro', provider: 'banana', version: 'v1-pro', capabilities: ['high-res', 'nano-pro'] },
+  { id: 'banana-nano-2', name: 'Google Nano Banana 2', provider: 'banana', version: 'v2', capabilities: ['next-gen', 'nano-2'] },
+
   // Flux Models
   { id: 'flux-1-pro', name: 'FLUX.1 Pro', provider: 'flux', version: 'v1', capabilities: ['realism', 'detail'] },
   { id: 'flux-2-pro', name: 'FLUX.2 Pro', provider: 'flux', version: 'v2', capabilities: ['next-gen', 'ultra-detail'] },
